@@ -1,0 +1,64 @@
+
+> school-management-system@1.0.0 compile:electron
+> tsc -p tsconfig.electron.json
+
+electron/main/ipc.ts(10,10): error TS2305: Module '"@prisma/client"' has no exported member 'Role'.
+prisma/seed.ts(192,41): error TS7006: Parameter 'f' implicitly has an 'any' type.
+prisma/seed.ts(193,43): error TS7006: Parameter 'f' implicitly has an 'any' type.
+prisma/seed.ts(194,38): error TS7006: Parameter 'f' implicitly has an 'any' type.
+prisma/seed.ts(195,40): error TS7006: Parameter 'f' implicitly has an 'any' type.
+server/services/academic.service.ts(142,80): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/academic.service.ts(155,59): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/academic.service.ts(174,61): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/academic.service.ts(188,59): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/academic.service.ts(210,56): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/academic.service.ts(238,49): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/academic.service.ts(243,27): error TS7006: Parameter 'student' implicitly has an 'any' type.
+server/services/academic.service.ts(326,43): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/academic.service.ts(326,46): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/academic.service.ts(327,38): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/academic.service.ts(327,41): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/academic.service.ts(331,34): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/academic.service.ts(357,25): error TS7006: Parameter 'student' implicitly has an 'any' type.
+server/services/academic.service.ts(359,45): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/academic.service.ts(359,48): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/academic.service.ts(360,40): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/academic.service.ts(360,43): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/attendance.service.ts(1,10): error TS2305: Module '"@prisma/client"' has no exported member 'AttendanceStatus'.
+server/services/attendance.service.ts(38,48): error TS7006: Parameter 'a' implicitly has an 'any' type.
+server/services/attendance.service.ts(43,27): error TS7006: Parameter 'student' implicitly has an 'any' type.
+server/services/attendance.service.ts(178,29): error TS7006: Parameter 'student' implicitly has an 'any' type.
+server/services/attendance.service.ts(238,34): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/attendance.service.ts(239,33): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/attendance.service.ts(240,32): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/auth.service.ts(3,10): error TS2305: Module '"@prisma/client"' has no exported member 'Role'.
+server/services/dashboard.service.ts(166,24): error TS7006: Parameter 'cls' implicitly has an 'any' type.
+server/services/dashboard.service.ts(190,22): error TS7006: Parameter 'exam' implicitly has an 'any' type.
+server/services/dashboard.service.ts(193,27): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+server/services/dashboard.service.ts(193,32): error TS7006: Parameter 'r' implicitly has an 'any' type.
+server/services/fee.service.ts(225,38): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+server/services/fee.service.ts(225,43): error TS7006: Parameter 'p' implicitly has an 'any' type.
+server/services/fee.service.ts(256,17): error TS7006: Parameter 'sf' implicitly has an 'any' type.
+server/services/fee.service.ts(257,14): error TS7006: Parameter 'sf' implicitly has an 'any' type.
+server/services/fee.service.ts(267,28): error TS7006: Parameter 'cls' implicitly has an 'any' type.
+server/services/fee.service.ts(271,43): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/fee.service.ts(275,38): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/fee.service.ts(275,41): error TS7006: Parameter 'f' implicitly has an 'any' type.
+server/services/fee.service.ts(276,42): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/fee.service.ts(276,45): error TS7006: Parameter 'f' implicitly has an 'any' type.
+server/services/file.service.ts(18,44): error TS7006: Parameter 'settings' implicitly has an 'any' type.
+server/services/settings.service.ts(17,65): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/settings.service.ts(40,56): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/settings.service.ts(143,87): error TS2339: Property 'data' does not exist on type 'unknown'.
+server/services/student.service.ts(1,18): error TS2305: Module '"@prisma/client"' has no exported member 'StudentStatus'.
+server/services/student.service.ts(1,33): error TS2305: Module '"@prisma/client"' has no exported member 'Gender'.
+server/services/student.service.ts(28,23): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'StudentWhereInput'.
+server/services/student.service.ts(67,40): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/student.service.ts(78,36): error TS7006: Parameter 's' implicitly has an 'any' type.
+server/services/student.service.ts(109,50): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'StudentCreateInput'.
+server/services/student.service.ts(128,19): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'StudentUncheckedCreateInput'.
+server/services/student.service.ts(144,62): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'StudentUpdateInput'.
+server/services/student.service.ts(149,28): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'StudentUncheckedUpdateInput'.
+server/services/student.service.ts(179,47): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+server/services/student.service.ts(179,52): error TS7006: Parameter 'item' implicitly has an 'any' type.
+server/services/student.service.ts(200,23): error TS2694: Namespace '"C:/Users/Admin/Desktop/School Project/CK CAREER ACADEMY/node_modules/.prisma/client/default".Prisma' has no exported member 'AttendanceWhereInput'.

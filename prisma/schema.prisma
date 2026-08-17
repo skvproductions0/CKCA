@@ -1,0 +1,556 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== AUTH & USERS ====================
+
+model User {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         String    @default("TEACHER")
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  auditLogs     AuditLog[]
+  feePayments   FeePayment[]
+  sessions      Session[]
+  teacher       Teacher?
+  notifications Notification[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+// ==================== SCHOOL SETTINGS ====================
+
+model SchoolSetting {
+  id                 String   @id @default(uuid())
+  schoolName         String   @default("ABC Public School Management System")
+  logoPath           String?
+  address            String?
+  phone              String?
+  email              String?
+  website            String?
+  principalName      String?
+  registrationNumber String?
+  receiptFooter      String?
+  reportCardFooter   String?
+  currencySymbol     String   @default("₹")
+  enableRanking      Boolean  @default(true)
+  backupSchedule     String   @default("weekly")
+  backupLocation     String?
+  autoBackupEnabled  Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model GradingRule {
+  id          String   @id @default(uuid())
+  grade       String
+  minPercent  Float
+  maxPercent  Float
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([grade])
+}
+
+model FeeCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  feeStructureItems FeeStructureItem[]
+  feePayments       FeePayment[]
+}
+
+// ==================== ACADEMIC YEAR ====================
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  students      Student[]
+  admissions    Admission[]
+  feeStructures FeeStructure[]
+  studentFees   StudentFee[]
+  feePayments   FeePayment[]
+  attendances   Attendance[]
+  exams         Exam[]
+  results       Result[]
+}
+
+// ==================== CLASSES & SECTIONS ====================
+
+model Class {
+  id           String    @id @default(uuid())
+  name         String
+  numericOrder Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  sections      Section[]
+  students      Student[]
+  subjects      Subject[]
+  feeStructures FeeStructure[]
+  exams         Exam[]
+
+  @@unique([name])
+}
+
+model Section {
+  id             String    @id @default(uuid())
+  name           String
+  classId        String
+  classTeacherId String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  class        Class        @relation(fields: [classId], references: [id])
+  classTeacher Teacher?     @relation(fields: [classTeacherId], references: [id])
+  students     Student[]
+  attendances  Attendance[]
+  exams        Exam[]
+
+  @@unique([classId, name])
+  @@index([classId])
+}
+
+// ==================== TEACHERS ====================
+
+model Teacher {
+  id               String    @id @default(uuid())
+  employeeId       String    @unique
+  userId           String?   @unique
+  name             String
+  fatherName       String?
+  motherName       String?
+  dateOfBirth      DateTime?
+  gender           String?
+  phone            String?
+  email            String?
+  address          String?
+  qualification    String?
+  subject          String?
+  joiningDate      DateTime?
+  salaryPaise      Int       @default(0)
+  photoPath        String?
+  emergencyContact String?
+  status           String    @default("ACTIVE")
+  isDemo           Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  user     User?     @relation(fields: [userId], references: [id])
+  sections Section[]
+  subjects Subject[]
+
+  @@index([name])
+  @@index([status])
+}
+
+// ==================== STUDENTS ====================
+
+model Student {
+  id               String    @id @default(uuid())
+  studentId        String    @unique
+  admissionNumber  String    @unique
+  name             String
+  fatherName       String?
+  fatherMobile     String?
+  fatherOccupation String?
+  fatherEmail      String?
+  motherName       String?
+  motherMobile     String?
+  motherOccupation String?
+  motherEmail      String?
+  guardianName     String?
+  guardianMobile   String?
+  guardianEmail    String?
+  guardianRelation String?
+  dateOfBirth      DateTime?
+  gender           String?
+  bloodGroup       String?
+  aadhaarNumber    String?
+  phone            String?
+  email            String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  classId          String?
+  sectionId        String?
+  rollNumber       String?
+  admissionDate    DateTime?
+  academicYearId   String?
+  photoPath        String?
+  emergencyContact String?
+  previousSchool   String?
+  previousClass    String?
+  tcNumber         String?
+  remarks          String?
+  status           String    @default("ACTIVE")
+  isDemo           Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  class        Class?        @relation(fields: [classId], references: [id])
+  section      Section?      @relation(fields: [sectionId], references: [id])
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id])
+
+  studentFees StudentFee[]
+  feePayments FeePayment[]
+  attendances Attendance[]
+  results     Result[]
+  documents   Document[]
+  admissions  Admission[]
+
+  @@index([name])
+  @@index([admissionNumber])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([academicYearId])
+  @@index([status])
+}
+
+// ==================== ADMISSIONS ====================
+
+model Admission {
+  id               String    @id @default(uuid())
+  studentId        String?
+  academicYearId   String
+  admissionNumber  String    @unique
+  name             String
+  fatherName       String?
+  fatherMobile     String?
+  fatherOccupation String?
+  fatherEmail      String?
+  motherName       String?
+  motherMobile     String?
+  motherOccupation String?
+  motherEmail      String?
+  guardianName     String?
+  guardianMobile   String?
+  guardianEmail    String?
+  guardianRelation String?
+  dateOfBirth      DateTime?
+  gender           String?
+  bloodGroup       String?
+  aadhaarNumber    String?
+  phone            String?
+  email            String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  previousSchool   String?
+  previousClass    String?
+  tcNumber         String?
+  classId          String?
+  sectionId        String?
+  rollNumber       String?
+  admissionDate    DateTime  @default(now())
+  status           String    @default("PENDING")
+  metadata         String?
+  photoPath        String?
+  remarks          String?
+  isDemo           Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  student      Student?     @relation(fields: [studentId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@index([academicYearId])
+  @@index([status])
+}
+
+// ==================== SUBJECTS ====================
+
+model Subject {
+  id           String    @id @default(uuid())
+  name         String
+  code         String
+  classId      String
+  maxMarks     Int       @default(100)
+  passingMarks Int       @default(40)
+  teacherId    String?
+  isActive     Boolean   @default(true)
+  isDemo       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  class   Class    @relation(fields: [classId], references: [id])
+  teacher Teacher? @relation(fields: [teacherId], references: [id])
+  results Result[]
+
+  @@unique([classId, code])
+  @@index([classId])
+}
+
+// ==================== FEES ====================
+
+model FeeStructure {
+  id             String   @id @default(uuid())
+  name           String
+  academicYearId String
+  classId        String?
+  studentId      String?
+  totalPaise     Int      @default(0)
+  isActive       Boolean  @default(true)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  academicYear AcademicYear       @relation(fields: [academicYearId], references: [id])
+  class        Class?             @relation(fields: [classId], references: [id])
+  items        FeeStructureItem[]
+  studentFees  StudentFee[]
+
+  @@index([academicYearId])
+  @@index([classId])
+}
+
+model FeeStructureItem {
+  id             String @id @default(uuid())
+  feeStructureId String
+  feeCategoryId  String
+  amountPaise    Int
+
+  feeStructure FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeCategory  FeeCategory  @relation(fields: [feeCategoryId], references: [id])
+
+  @@unique([feeStructureId, feeCategoryId])
+}
+
+model StudentFee {
+  id             String   @id @default(uuid())
+  studentId      String
+  feeStructureId String?
+  academicYearId String
+  totalPaise     Int      @default(0)
+  paidPaise      Int      @default(0)
+  discountPaise  Int      @default(0)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student      Student       @relation(fields: [studentId], references: [id])
+  feeStructure FeeStructure? @relation(fields: [feeStructureId], references: [id])
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, academicYearId])
+  @@index([studentId])
+  @@index([academicYearId])
+}
+
+model FeePayment {
+  id               String   @id @default(uuid())
+  receiptNumber    String   @unique
+  studentId        String
+  academicYearId   String
+  feeCategoryId    String?
+  amountPaise      Int
+  paymentDate      DateTime @default(now())
+  paymentMethod    String   @default("CASH")
+  previousDuePaise Int      @default(0)
+  currentDuePaise  Int      @default(0)
+  remarks          String?
+  collectedById    String?
+  status           String   @default("COMPLETED")
+  isDemo           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  student      Student      @relation(fields: [studentId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  feeCategory  FeeCategory? @relation(fields: [feeCategoryId], references: [id])
+  collectedBy  User?        @relation(fields: [collectedById], references: [id])
+
+  @@index([studentId])
+  @@index([paymentDate])
+  @@index([receiptNumber])
+  @@index([academicYearId])
+}
+
+// ==================== ATTENDANCE ====================
+
+model Attendance {
+  id             String   @id @default(uuid())
+  studentId      String
+  sectionId      String
+  academicYearId String
+  date           DateTime
+  status         String   @default("PRESENT")
+  remarks        String?
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student      Student      @relation(fields: [studentId], references: [id])
+  section      Section      @relation(fields: [sectionId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@index([academicYearId])
+}
+
+// ==================== EXAMS & RESULTS ====================
+
+model Exam {
+  id             String   @id @default(uuid())
+  name           String
+  academicYearId String
+  classId        String
+  sectionId      String?
+  startDate      DateTime
+  endDate        DateTime
+  isActive       Boolean  @default(true)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  class        Class        @relation(fields: [classId], references: [id])
+  section      Section?     @relation(fields: [sectionId], references: [id])
+  results      Result[]
+
+  @@index([academicYearId])
+  @@index([classId])
+}
+
+model Result {
+  id             String   @id @default(uuid())
+  studentId      String
+  examId         String
+  subjectId      String
+  academicYearId String
+  marksObtained  Float
+  maxMarks       Float
+  grade          String?
+  percentage     Float?
+  rank           Int?
+  remarks        String?
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student      Student      @relation(fields: [studentId], references: [id])
+  exam         Exam         @relation(fields: [examId], references: [id])
+  subject      Subject      @relation(fields: [subjectId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, examId, subjectId])
+  @@index([examId])
+  @@index([studentId])
+  @@index([academicYearId])
+}
+
+// ==================== DOCUMENTS ====================
+
+model Document {
+  id         String   @id @default(uuid())
+  studentId  String
+  name       String
+  type       String   @default("OTHER")
+  filePath   String
+  fileSize   Int      @default(0)
+  mimeType   String?
+  uploadedAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String?
+  title     String
+  message   String
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+// ==================== AUDIT LOG ====================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ==================== RECEIPT COUNTER ====================
+
+model ReceiptCounter {
+  id      String @id @default(uuid())
+  year    Int    @unique
+  counter Int    @default(0)
+}
+
+model AdmissionCounter {
+  id      String @id @default(uuid())
+  year    Int    @unique
+  counter Int    @default(0)
+}

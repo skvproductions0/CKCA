@@ -1,0 +1,25 @@
+src/components/layout/ProtectedRoute.tsx(2,25): error TS2307: Cannot find module '../context/AuthContext' or its corresponding type declarations.
+src/components/layout/ProtectedRoute.tsx(3,32): error TS2307: Cannot find module '../components/ui/Common' or its corresponding type declarations.
+src/components/layout/ProtectedRoute.tsx(4,31): error TS2307: Cannot find module '../utils/helpers' or its corresponding type declarations.
+src/pages/fees/FeesPage.tsx(5,1): error TS6133: 'Button' is declared but its value is never read.
+src/pages/fees/PaymentFormPage.tsx(9,22): error TS6133: 'LoadingSpinner' is declared but its value is never read.
+src/pages/reports/ReportsPage.tsx(8,23): error TS6133: 'exportToExcel' is declared but its value is never read.
+src/pages/reports/ReportsPage.tsx(72,11): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/pages/reports/ReportsPage.tsx(90,11): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/pages/students/StudentProfilePage.tsx(109,58): error TS2322: Type 'unknown' is not assignable to type 'ReactNode'.
+src/pages/students/StudentsPage.tsx(4,24): error TS2307: Cannot find module '../context/AppContext' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(5,26): error TS2307: Cannot find module '../context/ToastContext' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(6,75): error TS2307: Cannot find module '../components/ui/Common' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(7,24): error TS2307: Cannot find module '../components/ui/Button' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(8,1): error TS6133: 'Input' is declared but its value is never read.
+src/pages/students/StudentsPage.tsx(8,23): error TS2307: Cannot find module '../components/ui/Input' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(9,24): error TS2307: Cannot find module '../components/ui/Select' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(10,31): error TS2307: Cannot find module '../components/ui/Modal' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(11,57): error TS2307: Cannot find module '../utils/helpers' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(12,25): error TS2307: Cannot find module '../types' or its corresponding type declarations.
+src/pages/students/StudentsPage.tsx(91,147): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/pages/students/StudentsPage.tsx(92,101): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/pages/students/StudentsPage.tsx(93,197): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/pages/teachers/TeachersPage.tsx(9,1): error TS6133: 'Select' is declared but its value is never read.
+src/pages/teachers/TeachersPage.tsx(14,9): error TS6133: 'navigate' is declared but its value is never read.
+src/utils/pdf.ts(3,38): error TS2305: Module '"./helpers"' has no exported member 'numberToWords'.

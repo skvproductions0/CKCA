@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.db
+*.db-journal
+.env
+uploads/
+backups/
+.DS_Store
+Thumbs.db
