@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { app, dialog } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { getDatabasePath, getPrismaClient } from '../database/client';
 import { createAuditLog } from './auth.service';
 
@@ -102,4 +102,58 @@ export async function selectFile(filters?: { name: string; extensions: string[] 
     properties: ['openFile'],
   });
   return result.canceled ? null : result.filePaths[0];
+}
+
+/**
+ * Copies a file from any location into the app's managed uploads folder.
+ * Returns the destination path (inside uploads/).
+ */
+export async function copyFileToUploads(srcPath: string, subfolder: string): Promise<string> {
+  const uploadsPath = getUploadsPath();
+  const dir = path.join(uploadsPath, subfolder);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const ext = path.extname(srcPath);
+  const baseName = path.basename(srcPath, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const uniqueName = `${baseName}-${Date.now()}${ext}`;
+  const destPath = path.join(dir, uniqueName);
+
+  fs.copyFileSync(srcPath, destPath);
+  return destPath;
+}
+
+/**
+ * Opens a file with the system default application (e.g. Adobe Acrobat, Microsoft Word, Photos)
+ */
+export async function openFile(filePath: string): Promise<string> {
+  if (!fs.existsSync(filePath)) {
+    throw new Error('File does not exist on disk.');
+  }
+  const err = await shell.openPath(filePath);
+  if (err) throw new Error(err);
+  return 'OK';
+}
+
+/**
+ * Reads a local file from disk and returns its data URL (base64) so it can be previewed in iframes/img tags.
+ */
+export async function readFileAsDataUrl(filePath: string): Promise<string> {
+  if (filePath.startsWith('data:')) return filePath;
+  if (!fs.existsSync(filePath)) throw new Error('File not found on disk.');
+  const buffer = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  const mime = mimeTypes[ext] || 'application/octet-stream';
+  return `data:${mime};base64,${buffer.toString('base64')}`;
 }

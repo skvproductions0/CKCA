@@ -1,15 +1,65 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, Edit, Archive, Users } from 'lucide-react';
+import { Plus, Search, MoreVertical, Eye, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, LoadingSpinner, EmptyState, Badge, Pagination } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
-import { ConfirmDialog } from '../../components/ui/Modal';
-import { formatCurrency, GENDER_OPTIONS, apiCall } from '../../utils/helpers';
+import { TypeConfirmDialog } from '../../components/ui/Modal';
+import { formatCurrency, GENDER_OPTIONS, apiCall, getLocalFileUrl } from '../../utils/helpers';
 import { Student } from '../../types';
 
+/* ── 3-dot action menu per row ─────────────────────────────────────────── */
+function RowMenu({ onView, onDelete }: {
+  onView: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
+        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        title="Actions"
+      >
+        <MoreVertical className="w-4 h-4 text-gray-500" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-8 z-30 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+          <button
+            onClick={() => { setOpen(false); onView(); }}
+            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+          >
+            <Eye className="w-3.5 h-3.5 text-blue-500" />
+            View Details
+          </button>
+          <div className="h-px bg-gray-100 dark:bg-gray-700 mx-2 my-0.5" />
+          <button
+            onClick={() => { setOpen(false); onDelete(); }}
+            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main page ─────────────────────────────────────────────────────────── */
 export default function StudentsPage() {
   const { academicYear } = useApp();
   const { success, error: showError } = useToast();
@@ -20,14 +70,15 @@ export default function StudentsPage() {
   const [classFilter, setClassFilter] = useState('');
   const [genderFilter, setGenderFilter] = useState('');
   const [feeFilter, setFeeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
-  const [archiveId, setArchiveId] = useState<string | null>(null);
-  const [archiving, setArchiving] = useState(false);
+  const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { loadClasses(); }, []);
-  useEffect(() => { loadStudents(); }, [search, classFilter, genderFilter, feeFilter, page, academicYear?.id]);
+  useEffect(() => { loadStudents(); }, [search, classFilter, genderFilter, feeFilter, statusFilter, page, academicYear?.id]);
 
   const loadClasses = async () => {
     try {
@@ -40,9 +91,14 @@ export default function StudentsPage() {
     setLoading(true);
     try {
       const result = await apiCall(() => window.api.students.list({
-        search, classId: classFilter || undefined, gender: genderFilter || undefined,
-        feeStatus: feeFilter || undefined, academicYearId: academicYear?.id,
-        page, limit: 20,
+        search,
+        classId: classFilter || undefined,
+        gender: genderFilter || undefined,
+        feeStatus: feeFilter || undefined,
+        status: statusFilter || undefined,
+        academicYearId: academicYear?.id,
+        page,
+        limit: 20,
       })) as { students: Student[]; totalPages: number };
       setStudents(result.students);
       setTotalPages(result.totalPages);
@@ -53,18 +109,33 @@ export default function StudentsPage() {
     }
   };
 
-  const handleArchive = async () => {
-    if (!archiveId) return;
-    setArchiving(true);
+  const handleDelete = async () => {
+    if (!deleteStudent) return;
+    setDeleting(true);
     try {
-      await apiCall(() => window.api.students.archive(archiveId));
-      success('Student archived successfully');
-      setArchiveId(null);
+      await apiCall(() => window.api.students.archive(deleteStudent.id));
+      success('Student deleted successfully');
+      setDeleteStudent(null);
       loadStudents();
     } catch (err) {
-      showError(err instanceof Error ? err.message : 'Failed to archive');
+      showError(err instanceof Error ? err.message : 'Failed to delete');
     } finally {
-      setArchiving(false);
+      setDeleting(false);
+    }
+  };
+
+  const renderStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'ACTIVE':
+        return <Badge variant="success">Active</Badge>;
+      case 'INACTIVE':
+        return <Badge variant="danger">Inactive</Badge>;
+      case 'TRANSFERRED':
+        return <Badge variant="warning">Transferred</Badge>;
+      case 'GRADUATED':
+        return <Badge variant="info">Graduated</Badge>;
+      default:
+        return <Badge variant="gray">{status || 'Active'}</Badge>;
     }
   };
 
@@ -77,8 +148,8 @@ export default function StudentsPage() {
       />
 
       <div className="card p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div className="md:col-span-2 relative">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="sm:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               className="input pl-10"
@@ -90,12 +161,24 @@ export default function StudentsPage() {
           <Select placeholder="All Classes" options={classes.map(c => ({ value: c.id, label: `Class ${c.name}` }))} value={classFilter} onChange={e => { setClassFilter(e.target.value); setPage(1); }} />
           <Select placeholder="All Genders" options={GENDER_OPTIONS} value={genderFilter} onChange={e => { setGenderFilter(e.target.value); setPage(1); }} />
           <Select placeholder="Fee Status" options={[{ value: 'paid', label: 'Paid' }, { value: 'partial', label: 'Partial' }, { value: 'pending', label: 'Pending' }]} value={feeFilter} onChange={e => { setFeeFilter(e.target.value); setPage(1); }} />
+          <Select
+            placeholder="All Statuses"
+            options={[
+              { value: '', label: 'All Statuses' },
+              { value: 'ACTIVE', label: 'Active' },
+              { value: 'INACTIVE', label: 'Inactive' },
+              { value: 'TRANSFERRED', label: 'Transferred' },
+              { value: 'GRADUATED', label: 'Graduated' },
+            ]}
+            value={statusFilter}
+            onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          />
         </div>
       </div>
 
       <div className="card overflow-hidden">
         {loading ? <LoadingSpinner /> : students.length === 0 ? (
-          <EmptyState title="No students found" description="Add your first student to get started" icon={<Users className="w-12 h-12" />} action={<Button onClick={() => navigate('/students/add')}><Plus className="w-4 h-4" /> Add Student</Button>} />
+          <EmptyState title="No students found" description="Add your first student or clear filters" icon={<Users className="w-12 h-12" />} action={<Button onClick={() => navigate('/students/add')}><Plus className="w-4 h-4" /> Add Student</Button>} />
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -117,8 +200,19 @@ export default function StudentsPage() {
                     <tr key={student.id} className="border-t border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                       <td className="p-4 font-mono text-xs">{student.admissionNumber}</td>
                       <td className="p-4">
-                        <p className="font-medium">{student.name}</p>
-                        <p className="text-xs text-gray-500">{student.fatherName}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900/50 flex-shrink-0 flex items-center justify-center border border-primary-200 dark:border-primary-800">
+                            {student.photoPath ? (
+                              <img src={getLocalFileUrl(student.photoPath)} alt={student.name} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />
+                            ) : (
+                              <span className="text-xs font-bold text-primary-700 dark:text-primary-300">{student.name.charAt(0)}</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium">{student.name}</p>
+                            <p className="text-xs text-gray-500">{student.fatherName}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4">{student.class?.name ? `Class ${student.class.name}` : '-'}</td>
                       <td className="p-4">{student.section?.name || '-'}</td>
@@ -130,12 +224,13 @@ export default function StudentsPage() {
                           <Badge variant="success">Paid</Badge>
                         )}
                       </td>
-                      <td className="p-4"><Badge variant={student.status === 'ACTIVE' ? 'success' : 'gray'}>{student.status}</Badge></td>
+                      <td className="p-4">{renderStatusBadge(student.status)}</td>
                       <td className="p-4">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => navigate(`/students/${student.id}`)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="View"><Eye className="w-4 h-4" /></button>
-                          <button onClick={() => navigate(`/students/${student.id}/edit`)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Edit"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => setArchiveId(student.id)} className="p-1.5 rounded hover:bg-red-50 text-red-500" title="Archive"><Archive className="w-4 h-4" /></button>
+                        <div className="flex items-center justify-end">
+                          <RowMenu
+                            onView={() => navigate(`/students/${student.id}`)}
+                            onDelete={() => setDeleteStudent(student)}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -148,13 +243,16 @@ export default function StudentsPage() {
         )}
       </div>
 
-      <ConfirmDialog
-        isOpen={!!archiveId}
-        onClose={() => setArchiveId(null)}
-        onConfirm={handleArchive}
-        title="Archive Student"
-        message="Are you sure you want to archive this student? This action can be reversed by an administrator."
-        loading={archiving}
+      {/* Type-to-confirm delete dialog */}
+      <TypeConfirmDialog
+        isOpen={!!deleteStudent}
+        onClose={() => setDeleteStudent(null)}
+        onConfirm={handleDelete}
+        title="Delete Student"
+        message={`This will permanently delete ${deleteStudent?.name}'s record including all fee history, attendance, and results. This action cannot be undone.`}
+        requiredText={deleteStudent?.name ?? ''}
+        confirmText="Delete Student"
+        loading={deleting}
       />
     </div>
   );

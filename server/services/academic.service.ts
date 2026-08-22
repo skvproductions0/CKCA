@@ -88,12 +88,19 @@ export async function setCurrentAcademicYear(id: string, userId: string) {
   return year;
 }
 
-export async function createAcademicYear(data: { name: string; startDate: Date; endDate: Date; isCurrent?: boolean }, userId: string) {
+export async function createAcademicYear(data: { name: string; startDate: Date | string; endDate: Date | string; isCurrent?: boolean }, userId: string) {
   const db = getPrismaClient();
   if (data.isCurrent) {
     await db.academicYear.updateMany({ data: { isCurrent: false } });
   }
-  const year = await db.academicYear.create({ data });
+  const year = await db.academicYear.create({
+    data: {
+      name: data.name,
+      startDate: new Date(data.startDate),
+      endDate: new Date(data.endDate),
+      isCurrent: Boolean(data.isCurrent),
+    },
+  });
   await createAuditLog(userId, 'ACADEMIC_YEAR_CREATED', 'AcademicYear', year.id, year.name);
   return year;
 }

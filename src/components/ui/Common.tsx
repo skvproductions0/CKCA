@@ -72,9 +72,10 @@ export function StatCard({ title, value, icon, trend, color = 'bg-primary-50 tex
 interface BadgeProps {
   children: ReactNode;
   variant?: 'success' | 'warning' | 'danger' | 'info' | 'gray';
+  className?: string;
 }
 
-export function Badge({ children, variant = 'gray' }: BadgeProps) {
+export function Badge({ children, variant = 'gray', className = '' }: BadgeProps) {
   const variants = {
     success: 'badge-success',
     warning: 'badge-warning',
@@ -82,7 +83,7 @@ export function Badge({ children, variant = 'gray' }: BadgeProps) {
     info: 'badge-info',
     gray: 'badge-gray',
   };
-  return <span className={variants[variant]}>{children}</span>;
+  return <span className={`${variants[variant]} ${className}`.trim()}>{children}</span>;
 }
 
 interface PaginationProps {

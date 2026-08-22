@@ -133,6 +133,11 @@ const api = {
     save: (buffer: ArrayBuffer, filename: string, subfolder: string) =>
       ipcRenderer.invoke('files:save', buffer, filename, subfolder),
     select: (filters?: unknown) => ipcRenderer.invoke('files:select', filters),
+    copyToUploads: (srcPath: string, subfolder: string) =>
+      ipcRenderer.invoke('files:copyToUploads', srcPath, subfolder),
+    getUploadsPath: () => ipcRenderer.invoke('files:getUploadsPath'),
+    open: (filePath: string) => ipcRenderer.invoke('files:open', filePath),
+    readDataUrl: (filePath: string) => ipcRenderer.invoke('files:readDataUrl', filePath),
   },
 };
 

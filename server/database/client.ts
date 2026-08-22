@@ -5,27 +5,49 @@ import fs from "fs";
 
 let prisma: PrismaClient | null = null;
 
+export function isDevelopment(): boolean {
+  if (process.env.NODE_ENV === "development") return true;
+  if (!app || typeof app.isPackaged === "undefined") return true;
+  return !app.isPackaged;
+}
+
 export function getDatabasePath(): string {
-  const isDev = process.env.NODE_ENV === "development";
-  if (isDev) {
-    return path.join(process.cwd(), "prisma", "dev.db");
+  if (isDevelopment()) {
+    const ckcaPrisma = path.join(process.cwd(), "CKCA", "prisma", "dev.db");
+    if (fs.existsSync(ckcaPrisma)) return ckcaPrisma;
+
+    const rootPrisma = path.join(process.cwd(), "prisma", "dev.db");
+    if (fs.existsSync(rootPrisma)) return rootPrisma;
+
+    const dirPrisma = path.resolve(__dirname, "..", "..", "prisma", "dev.db");
+    if (fs.existsSync(dirPrisma)) return dirPrisma;
+
+    return ckcaPrisma;
   }
 
   const isWindows = process.platform === "win32";
   const baseDir = isWindows && process.env.ProgramData
     ? path.join(process.env.ProgramData, "SchoolManagement")
-    : path.join(app.getPath("userData"), "database");
+    : (app ? path.join(app.getPath("userData"), "database") : path.join(process.cwd(), "database"));
 
   if (!fs.existsSync(baseDir)) {
     fs.mkdirSync(baseDir, { recursive: true });
   }
-  return path.join(baseDir, "school.db");
+  const prodDb = path.join(baseDir, "school.db");
+  if (!fs.existsSync(prodDb)) {
+    const templateDb = path.resolve(__dirname, "..", "..", "prisma", "dev.db");
+    if (fs.existsSync(templateDb)) {
+      try { fs.copyFileSync(templateDb, prodDb); } catch {}
+    }
+  }
+  return prodDb;
 }
 
 export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     const dbPath = getDatabasePath();
-    const dbUrl = `file:${dbPath}`;
+    const normalizedPath = dbPath.replace(/\\/g, '/');
+    const dbUrl = `file:${normalizedPath}`;
     prisma = new PrismaClient({
       datasources: { db: { url: dbUrl } },
     });

@@ -96,6 +96,18 @@ export async function recordPayment(data: {
       ? studentFee.totalPaise - studentFee.paidPaise
       : 0;
 
+    let validCollectedById: string | null = null;
+    if (data.collectedById) {
+      const user = await db.user.findUnique({ where: { id: data.collectedById } });
+      if (user) validCollectedById = user.id;
+    }
+
+    let validFeeCategoryId: string | null = null;
+    if (data.feeCategoryId) {
+      const cat = await db.feeCategory.findUnique({ where: { id: data.feeCategoryId } });
+      if (cat) validFeeCategoryId = cat.id;
+    }
+
     const payment = await db.feePayment.create({
       data: {
         receiptNumber,
@@ -104,11 +116,11 @@ export async function recordPayment(data: {
         amountPaise: data.amountPaise,
         paymentDate: data.paymentDate,
         paymentMethod: data.paymentMethod as 'CASH' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE' | 'OTHER',
-        feeCategoryId: data.feeCategoryId,
+        feeCategoryId: validFeeCategoryId,
         previousDuePaise: previousDue,
         currentDuePaise: Math.max(0, previousDue - data.amountPaise),
         remarks: data.remarks,
-        collectedById: data.collectedById,
+        collectedById: validCollectedById,
       },
       include: {
         student: { include: { class: true, section: true } },

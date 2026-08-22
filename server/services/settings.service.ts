@@ -148,8 +148,7 @@ export async function createAdmission(data: Record<string, unknown>, userId: str
     const raw = data as Record<string, any>;
     const createData: Record<string, any> = { ...raw, admissionNumber };
     if (raw.studentId) {
-      createData.student = { connect: { id: raw.studentId } };
-      delete createData.studentId;
+      createData.studentId = raw.studentId;
     }
 
     const admission = await db.admission.create({
@@ -191,85 +190,123 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
 
   const admissionNumber = `ADM-${year}-${String(newCounter).padStart(4, '0')}`;
 
+  // Validate and sanitize foreign keys
+  let academicYearId = (typeof academic.academicYearId === 'string' && academic.academicYearId.trim()) ? academic.academicYearId.trim() : null;
+  if (academicYearId) {
+    const exists = await db.academicYear.findUnique({ where: { id: academicYearId } });
+    if (!exists) academicYearId = null;
+  }
+  if (!academicYearId) {
+    const fallbackYear = (await db.academicYear.findFirst({ where: { isCurrent: true } })) || (await db.academicYear.findFirst());
+    if (fallbackYear) {
+      academicYearId = fallbackYear.id;
+    } else {
+      throw new Error('No Academic Year found. Please configure an Academic Year first.');
+    }
+  }
+
+  let classId = (typeof academic.classId === 'string' && academic.classId.trim()) ? academic.classId.trim() : null;
+  if (classId) {
+    const exists = await db.class.findUnique({ where: { id: classId } });
+    if (!exists) classId = null;
+  }
+
+  let sectionId = (typeof academic.sectionId === 'string' && academic.sectionId.trim()) ? academic.sectionId.trim() : null;
+  if (sectionId) {
+    const exists = await db.section.findUnique({ where: { id: sectionId } });
+    if (!exists) sectionId = null;
+  }
+
+  let feeCategoryId = (fee && typeof fee.feeCategoryId === 'string' && fee.feeCategoryId.trim()) ? fee.feeCategoryId.trim() : null;
+  if (feeCategoryId) {
+    const exists = await db.feeCategory.findUnique({ where: { id: feeCategoryId } });
+    if (!exists) feeCategoryId = null;
+  }
+
   const admissionData = {
-    academicYearId: academic.academicYearId as string,
+    academicYearId,
     admissionNumber,
     name: details.fullName as string,
-    fatherName: parent.fatherName as string | undefined,
-    fatherMobile: parent.fatherMobile as string | undefined,
-    fatherOccupation: parent.fatherOccupation as string | undefined,
-    fatherEmail: parent.fatherEmail as string | undefined,
-    motherName: parent.motherName as string | undefined,
-    motherMobile: parent.motherMobile as string | undefined,
-    motherOccupation: parent.motherOccupation as string | undefined,
-    motherEmail: parent.motherEmail as string | undefined,
-    guardianName: parent.guardianName as string | undefined,
-    guardianMobile: parent.guardianMobile as string | undefined,
-    guardianEmail: parent.guardianEmail as string | undefined,
-    guardianRelation: parent.guardianRelation as string | undefined,
+    fatherName: (parent.fatherName as string) || null,
+    fatherMobile: (parent.fatherMobile as string) || null,
+    fatherOccupation: (parent.fatherOccupation as string) || null,
+    fatherEmail: (parent.fatherEmail as string) || null,
+    motherName: (parent.motherName as string) || null,
+    motherMobile: (parent.motherMobile as string) || null,
+    motherOccupation: (parent.motherOccupation as string) || null,
+    motherEmail: (parent.motherEmail as string) || null,
+    guardianName: (parent.guardianName as string) || null,
+    guardianMobile: (parent.guardianMobile as string) || null,
+    guardianEmail: (parent.guardianEmail as string) || null,
+    guardianRelation: (parent.guardianRelation as string) || null,
     dateOfBirth: details.dateOfBirth ? new Date(details.dateOfBirth as string) : null,
-    gender: details.gender as string | undefined,
-    bloodGroup: details.bloodGroup as string | undefined,
-    aadhaarNumber: details.aadhaarNumber as string | undefined,
-    phone: parent.fatherMobile as string | undefined,
-    email: parent.fatherEmail as string | undefined,
-    address: parent.address as string | undefined,
-    city: parent.city as string | undefined,
-    state: parent.state as string | undefined,
-    pincode: parent.pincode as string | undefined,
-    previousSchool: details.previousSchool as string | undefined,
-    previousClass: academic.previousClass as string | undefined,
-    tcNumber: academic.tcNumber as string | undefined,
-    classId: academic.classId as string | undefined,
-    sectionId: academic.sectionId as string | undefined,
-    rollNumber: academic.rollNumber as string | undefined,
+    gender: (details.gender as string) || null,
+    bloodGroup: (details.bloodGroup as string) || null,
+    aadhaarNumber: (details.aadhaarNumber as string) || null,
+    phone: (parent.fatherMobile as string) || (parent.motherMobile as string) || (parent.guardianMobile as string) || null,
+    email: (parent.fatherEmail as string) || (parent.motherEmail as string) || (parent.guardianEmail as string) || null,
+    address: (parent.address as string) || null,
+    city: (parent.city as string) || null,
+    state: (parent.state as string) || null,
+    pincode: (parent.pincode as string) || null,
+    previousSchool: (details.previousSchool as string) || null,
+    previousClass: (academic.previousClass as string) || null,
+    tcNumber: (academic.tcNumber as string) || null,
+    classId,
+    sectionId,
+    rollNumber: (academic.rollNumber as string) || null,
     admissionDate: academic.admissionDate ? new Date(academic.admissionDate as string) : new Date(),
     status: draft ? 'PENDING' : ((academic.admissionStatus as string) || 'ENROLLED'),
     metadata: JSON.stringify({ documents, fee, files }),
-    photoPath: details.photoPath as string | undefined,
-    remarks: payload.remarks as string | undefined,
+    photoPath: (details.photoPath as string) || null,
+    remarks: (payload.remarks as string) || null,
   };
 
   const result = await db.$transaction(async (tx) => {
     let studentId: string | undefined;
 
     if (!draft) {
+      console.log('[WIZARD] Creating student with:', {
+        classId, sectionId, academicYearId,
+        name: details.fullName,
+        admissionNumber,
+      });
       const student = await tx.student.create({
         data: {
           studentId: `STU-${year}-${String(newCounter).padStart(4, '0')}`,
           admissionNumber,
           name: details.fullName as string,
-          fatherName: parent.fatherName as string | undefined,
-          fatherMobile: parent.fatherMobile as string | undefined,
-          fatherOccupation: parent.fatherOccupation as string | undefined,
-          fatherEmail: parent.fatherEmail as string | undefined,
-          motherName: parent.motherName as string | undefined,
-          motherMobile: parent.motherMobile as string | undefined,
-          motherOccupation: parent.motherOccupation as string | undefined,
-          motherEmail: parent.motherEmail as string | undefined,
-          guardianName: parent.guardianName as string | undefined,
-          guardianMobile: parent.guardianMobile as string | undefined,
-          guardianEmail: parent.guardianEmail as string | undefined,
-          guardianRelation: parent.guardianRelation as string | undefined,
+          fatherName: (parent.fatherName as string) || null,
+          fatherMobile: (parent.fatherMobile as string) || null,
+          fatherOccupation: (parent.fatherOccupation as string) || null,
+          fatherEmail: (parent.fatherEmail as string) || null,
+          motherName: (parent.motherName as string) || null,
+          motherMobile: (parent.motherMobile as string) || null,
+          motherOccupation: (parent.motherOccupation as string) || null,
+          motherEmail: (parent.motherEmail as string) || null,
+          guardianName: (parent.guardianName as string) || null,
+          guardianMobile: (parent.guardianMobile as string) || null,
+          guardianEmail: (parent.guardianEmail as string) || null,
+          guardianRelation: (parent.guardianRelation as string) || null,
           dateOfBirth: details.dateOfBirth ? new Date(details.dateOfBirth as string) : null,
-          gender: details.gender as string | undefined,
-          bloodGroup: details.bloodGroup as string | undefined,
-          aadhaarNumber: details.aadhaarNumber as string | undefined,
-          phone: parent.fatherMobile as string | undefined,
-          email: parent.fatherEmail as string | undefined,
-          address: parent.address as string | undefined,
-          city: parent.city as string | undefined,
-          state: parent.state as string | undefined,
-          pincode: parent.pincode as string | undefined,
-          classId: academic.classId as string | undefined,
-          sectionId: academic.sectionId as string | undefined,
-          rollNumber: academic.rollNumber as string | undefined,
+          gender: (details.gender as string) || null,
+          bloodGroup: (details.bloodGroup as string) || null,
+          aadhaarNumber: (details.aadhaarNumber as string) || null,
+          phone: (parent.fatherMobile as string) || (parent.motherMobile as string) || (parent.guardianMobile as string) || null,
+          email: (parent.fatherEmail as string) || (parent.motherEmail as string) || (parent.guardianEmail as string) || null,
+          address: (parent.address as string) || null,
+          city: (parent.city as string) || null,
+          state: (parent.state as string) || null,
+          pincode: (parent.pincode as string) || null,
+          classId: classId || null,
+          sectionId: sectionId || null,
+          rollNumber: (academic.rollNumber as string) || null,
           admissionDate: academic.admissionDate ? new Date(academic.admissionDate as string) : new Date(),
-          academicYearId: academic.academicYearId as string,
-          photoPath: details.photoPath as string | undefined,
-          previousSchool: details.previousSchool as string | undefined,
-          previousClass: academic.previousClass as string | undefined,
-          tcNumber: academic.tcNumber as string | undefined,
+          academicYearId: academicYearId || null,
+          photoPath: (details.photoPath as string) || null,
+          previousSchool: (details.previousSchool as string) || null,
+          previousClass: (academic.previousClass as string) || null,
+          tcNumber: (academic.tcNumber as string) || null,
           status: 'ACTIVE',
         },
       });
@@ -280,7 +317,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
       ...(admissionData as Parameters<typeof tx.admission.create>[0]['data']),
     };
     if (studentId) {
-      admissionCreateData.student = { connect: { id: studentId } };
+      admissionCreateData.studentId = studentId;
     }
 
     const admission = await tx.admission.create({
@@ -315,17 +352,17 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
       });
     }
 
-    if (!draft && fee && Number(fee.amount) > 0) {
+    if (!draft && fee && Number(fee.amount) > 0 && studentId) {
       const feeAmountPaise = Math.round(Number(fee.amount) * 100);
       const discountPaise = Math.round(Number(fee.discount) * 100);
       const paidPaise = Math.round(Number(fee.paidAmount) * 100);
-      const totalPaise = feeAmountPaise - discountPaise;
+      const totalPaise = Math.max(0, feeAmountPaise - discountPaise);
       const balancePaise = Math.max(0, totalPaise - paidPaise);
 
       await tx.studentFee.create({
         data: {
           studentId: studentId as string,
-          academicYearId: academic.academicYearId as string,
+          academicYearId,
           totalPaise,
           paidPaise,
           discountPaise,
@@ -333,18 +370,31 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
       });
 
       if (paidPaise > 0) {
+        let validCollectedById: string | null = null;
+        if (userId) {
+          const user = await tx.user.findUnique({ where: { id: userId } });
+          if (user) validCollectedById = user.id;
+        }
+
+        let validFeeCategoryId: string | null = null;
+        if (feeCategoryId) {
+          const cat = await tx.feeCategory.findUnique({ where: { id: feeCategoryId } });
+          if (cat) validFeeCategoryId = cat.id;
+        }
+
         await tx.feePayment.create({
           data: {
             receiptNumber: `RCPT-${year}-${String(newCounter).padStart(4, '0')}`,
             studentId: studentId as string,
-            academicYearId: academic.academicYearId as string,
+            academicYearId,
+            feeCategoryId: validFeeCategoryId,
             amountPaise: paidPaise,
             paymentDate: new Date(),
             paymentMethod: (fee.paymentMethod as string) || 'CASH',
             previousDuePaise: 0,
             currentDuePaise: balancePaise,
-            remarks: (fee.paymentReference as string) || undefined,
-            collectedById: userId,
+            remarks: (fee.paymentReference as string) || null,
+            collectedById: validCollectedById,
             status: 'COMPLETED',
           },
         });
@@ -373,30 +423,83 @@ export async function approveAdmission(id: string, userId: string) {
     counter = await db.admissionCounter.create({ data: { year, counter: 0 } });
   }
   const newCounter = counter.counter + 1;
+  await db.admissionCounter.update({ where: { year }, data: { counter: newCounter } });
+
+  const cleanClassId = (admission.classId && admission.classId.trim()) ? admission.classId.trim() : null;
+  let finalClassId: string | null = null;
+  if (cleanClassId) {
+    const exists = await db.class.findUnique({ where: { id: cleanClassId } });
+    if (exists) finalClassId = exists.id;
+  }
+
+  const cleanSectionId = (admission.sectionId && admission.sectionId.trim()) ? admission.sectionId.trim() : null;
+  let finalSectionId: string | null = null;
+  if (cleanSectionId) {
+    const exists = await db.section.findUnique({ where: { id: cleanSectionId } });
+    if (exists) finalSectionId = exists.id;
+  }
+
+  const cleanAcademicYearId = (admission.academicYearId && admission.academicYearId.trim()) ? admission.academicYearId.trim() : null;
+  let finalAcademicYearId: string | null = null;
+  if (cleanAcademicYearId) {
+    const exists = await db.academicYear.findUnique({ where: { id: cleanAcademicYearId } });
+    if (exists) finalAcademicYearId = exists.id;
+  }
+  if (!finalAcademicYearId) {
+    const fallback = (await db.academicYear.findFirst({ where: { isCurrent: true } })) || (await db.academicYear.findFirst());
+    finalAcademicYearId = fallback?.id || null;
+  }
 
   const student = await db.student.create({
     data: {
       studentId: `STU-${year}-${String(newCounter).padStart(4, '0')}`,
       admissionNumber: admission.admissionNumber,
       name: admission.name,
-      fatherName: admission.fatherName,
-      motherName: admission.motherName,
+      fatherName: admission.fatherName || null,
+      fatherMobile: admission.fatherMobile || null,
+      fatherOccupation: admission.fatherOccupation || null,
+      fatherEmail: admission.fatherEmail || null,
+      motherName: admission.motherName || null,
+      motherMobile: admission.motherMobile || null,
+      motherOccupation: admission.motherOccupation || null,
+      motherEmail: admission.motherEmail || null,
+      guardianName: admission.guardianName || null,
+      guardianMobile: admission.guardianMobile || null,
+      guardianEmail: admission.guardianEmail || null,
+      guardianRelation: admission.guardianRelation || null,
       dateOfBirth: admission.dateOfBirth,
-      gender: admission.gender,
-      phone: admission.phone,
-      email: admission.email,
-      address: admission.address,
-      previousSchool: admission.previousSchool,
-      classId: admission.classId,
-      sectionId: admission.sectionId,
-      academicYearId: admission.academicYearId,
+      gender: admission.gender || null,
+      bloodGroup: admission.bloodGroup || null,
+      aadhaarNumber: admission.aadhaarNumber || null,
+      phone: admission.phone || null,
+      email: admission.email || null,
+      address: admission.address || null,
+      city: admission.city || null,
+      state: admission.state || null,
+      pincode: admission.pincode || null,
+      previousSchool: admission.previousSchool || null,
+      previousClass: admission.previousClass || null,
+      tcNumber: admission.tcNumber || null,
+      rollNumber: admission.rollNumber || null,
+      classId: finalClassId,
+      sectionId: finalSectionId,
+      academicYearId: finalAcademicYearId,
       admissionDate: admission.admissionDate,
+      photoPath: admission.photoPath || null,
+      remarks: admission.remarks || null,
+      status: 'ACTIVE',
     },
   });
 
   await db.admission.update({
     where: { id },
-    data: { status: 'ENROLLED', studentId: student.id },
+    data: {
+      status: 'ENROLLED',
+      studentId: student.id,
+      classId: finalClassId,
+      sectionId: finalSectionId,
+      academicYearId: finalAcademicYearId || admission.academicYearId,
+    },
   });
 
   await createAuditLog(userId, 'ADMISSION_APPROVED', 'Admission', id, `Enrolled: ${student.name}`);

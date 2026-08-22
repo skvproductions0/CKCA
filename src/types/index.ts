@@ -158,8 +158,12 @@ declare global {
         selectLocation: () => Promise<ApiResponse<string | null>>;
       };
       files: {
-        save: (buffer: ArrayBuffer, filename: string, subfolder: string) => Promise<ApiResponse>;
-        select: (filters?: unknown) => Promise<ApiResponse>;
+        save: (buffer: ArrayBuffer, filename: string, subfolder: string) => Promise<ApiResponse<string>>;
+        select: (filters?: unknown) => Promise<ApiResponse<string | null>>;
+        copyToUploads: (srcPath: string, subfolder: string) => Promise<ApiResponse<string>>;
+        getUploadsPath: () => Promise<ApiResponse<string>>;
+        open: (filePath: string) => Promise<ApiResponse<string>>;
+        readDataUrl: (filePath: string) => Promise<ApiResponse<string>>;
       };
     };
   }

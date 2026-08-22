@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, User, CreditCard, ClipboardCheck, FileText, FolderOpen, Activity } from 'lucide-react';
+import { ArrowLeft, User, CreditCard, ClipboardCheck, FileText, FolderOpen, Activity, MoreVertical, Edit, Trash2, Eye, Download, ExternalLink } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, LoadingSpinner, Badge } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
-import { formatCurrency, formatDate, apiCall } from '../../utils/helpers';
+import { Modal, TypeConfirmDialog } from '../../components/ui/Modal';
+import { formatCurrency, formatDate, apiCall, getLocalFileUrl } from '../../utils/helpers';
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: User },
@@ -16,17 +17,118 @@ const tabs = [
   { id: 'activity', label: 'Activity', icon: Activity },
 ];
 
+/* ── Profile 3-dot dropdown ───────────────────────────────────────────── */
+function ProfileMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-700"
+        title="More options"
+      >
+        <MoreVertical className="w-4 h-4 text-gray-500" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-11 z-30 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl py-1">
+          <button
+            onClick={() => { setOpen(false); onEdit(); }}
+            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+          >
+            <Edit className="w-3.5 h-3.5 text-blue-500" />
+            Edit Student
+          </button>
+          <div className="h-px bg-gray-100 dark:bg-gray-700 mx-2 my-0.5" />
+          <button
+            onClick={() => { setOpen(false); onDelete(); }}
+            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete Student
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main page ─────────────────────────────────────────────────────────── */
 export default function StudentProfilePage() {
   const { id } = useParams<{ id: string }>();
   const { academicYear } = useApp();
-  const { error: showError } = useToast();
+  const { error: showError, success } = useToast();
   const navigate = useNavigate();
   const [student, setStudent] = useState<Record<string, any> | null>(null);
   const [attendance, setAttendance] = useState<Record<string, number> | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ name: string; type: string; filePath?: string } | null>(null);
+  const [docDataUrl, setDocDataUrl] = useState<string | null>(null);
+  const [loadingDoc, setLoadingDoc] = useState(false);
 
   useEffect(() => { if (id) loadStudent(); }, [id]);
+
+  useEffect(() => {
+    if (!previewDoc?.filePath) {
+      setDocDataUrl(null);
+      return;
+    }
+    const path = previewDoc.filePath;
+    if (path.startsWith('data:')) {
+      setDocDataUrl(path);
+      return;
+    }
+    setLoadingDoc(true);
+    (async () => {
+      try {
+        if (window.api.files && typeof window.api.files.readDataUrl === 'function') {
+          const res = await apiCall<string>(() => window.api.files.readDataUrl(path));
+          setDocDataUrl(res);
+        } else if (window.api.invoke) {
+          const res = await window.api.invoke('files:readDataUrl', path);
+          if (res && typeof res === 'object' && 'data' in res && (res as { data?: string }).data) {
+            setDocDataUrl((res as { data: string }).data);
+          } else {
+            setDocDataUrl(path);
+          }
+        } else {
+          setDocDataUrl(path);
+        }
+      } catch (e) {
+        console.error('Failed to read file as data url:', e);
+        setDocDataUrl(path);
+      } finally {
+        setLoadingDoc(false);
+      }
+    })();
+  }, [previewDoc]);
+
+  const handleOpenInSystem = async (filePath?: string) => {
+    if (!filePath) return;
+    try {
+      if (window.api.files && typeof window.api.files.open === 'function') {
+        await apiCall(() => window.api.files.open(filePath));
+      } else if (window.api.invoke) {
+        await window.api.invoke('files:open', filePath);
+      }
+      success('Opening document in default app...');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Could not open file in system app');
+    }
+  };
 
   const loadStudent = async () => {
     setLoading(true);
@@ -44,6 +146,20 @@ export default function StudentProfilePage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      await apiCall(() => window.api.students.archive(id));
+      success('Student deleted successfully');
+      navigate('/students');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to delete student');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
   if (!student) return null;
 
@@ -55,29 +171,49 @@ export default function StudentProfilePage() {
   const payments = (s.feePayments as Record<string, unknown>[]) || [];
   const results = (s.results as Record<string, unknown>[]) || [];
   const documents = (s.documents as Record<string, unknown>[]) || [];
+  const studentName = s.name as string;
+  const photoUrl = s.photoPath as string | undefined;
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" onClick={() => navigate('/students')}><ArrowLeft className="w-4 h-4" /></Button>
-        <PageHeader title={s.name as string} subtitle={`${s.admissionNumber} • Class ${cls?.name}-${sec?.name}`} />
+        <div className="flex-1">
+          <PageHeader title={studentName} subtitle={`${s.admissionNumber} • Class ${cls?.name}-${sec?.name}`} />
+        </div>
+        {/* 3-dot menu in the top right of the header */}
+        <ProfileMenu
+          onEdit={() => navigate(`/students/${id}/edit`)}
+          onDelete={() => setShowDelete(true)}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* ── Left sidebar: photo card ── */}
         <div className="card p-6 text-center">
-          <div className="w-24 h-24 mx-auto rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center mb-4">
-            <User className="w-12 h-12 text-primary-600" />
+          <div className="w-28 h-28 mx-auto rounded-full overflow-hidden bg-primary-100 dark:bg-primary-900 flex items-center justify-center mb-4 ring-4 ring-primary-100 dark:ring-primary-900/50">
+            {photoUrl ? (
+              <img
+                src={getLocalFileUrl(photoUrl)}
+                alt={studentName}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <User className="w-14 h-14 text-primary-600" />
+            )}
           </div>
-          <h2 className="font-bold text-lg">{s.name as string}</h2>
+          <h2 className="font-bold text-lg">{studentName}</h2>
           <p className="text-sm text-gray-500">{s.admissionNumber as string}</p>
-          <div className="mt-3 flex justify-center gap-2">
+          <div className="mt-3 flex justify-center gap-2 flex-wrap">
             <Badge variant="info">Class {cls?.name}-{sec?.name}</Badge>
             <Badge variant="gray">Roll {s.rollNumber as string}</Badge>
           </div>
-          {(s.isDemo as boolean) && <Badge variant="warning">Demo Data</Badge>}
+          {(s.isDemo as boolean) && <div className="mt-2"><Badge variant="warning">Demo Data</Badge></div>}
           <div className="mt-4 space-y-2">
             <Button variant="secondary" className="w-full" onClick={() => navigate(`/payments/new?studentId=${id}`)}>Record Payment</Button>
-            <Button variant="ghost" className="w-full" onClick={() => navigate(`/students/${id}/edit`)}>Edit Profile</Button>
           </div>
         </div>
 
@@ -101,13 +237,17 @@ export default function StudentProfilePage() {
                   ['Father\'s Name', s.fatherName], ['Mother\'s Name', s.motherName],
                   ['Date of Birth', s.dateOfBirth ? formatDate(s.dateOfBirth as string) : '-'],
                   ['Gender', s.gender], ['Blood Group', s.bloodGroup], ['Phone', s.phone],
-                  ['Email', s.email], ['Address', s.address], ['City', s.city],
+                  ['Email', s.email],
+                  ['Aadhaar Number', s.aadhaarNumber
+                    ? String(s.aadhaarNumber).replace(/\D/g, '').replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3')
+                    : undefined],
+                  ['Address', s.address], ['City', s.city],
                   ['Admission Date', s.admissionDate ? formatDate(s.admissionDate as string) : '-'],
                   ['Previous School', s.previousSchool], ['Emergency Contact', s.emergencyContact],
                 ] as [string, string | undefined][]).map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs text-gray-500">{label}</p>
-                    <p className="text-sm font-medium">{value || '-'}</p>
+                    <p className={`text-sm font-medium ${label === 'Aadhaar Number' && value ? 'font-mono tracking-widest' : ''}`}>{value || '-'}</p>
                   </div>
                 ))}
               </div>
@@ -182,13 +322,30 @@ export default function StudentProfilePage() {
 
             {activeTab === 'documents' && (
               documents.length === 0 ? <p className="text-sm text-gray-500">No documents uploaded</p> : (
-                <div className="space-y-2">
-                  {documents.map((d, i) => (
-                    <div key={i} className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-sm">{d.name as string}</span>
-                      <Badge variant="gray">{d.type as string}</Badge>
-                    </div>
-                  ))}
+                <div className="space-y-3">
+                  {documents.map((d, i) => {
+                    const docPath = d.filePath as string | undefined;
+                    return (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-primary-600 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium">{d.name as string}</p>
+                            <p className="text-xs text-gray-500">{d.type as string}</p>
+                          </div>
+                        </div>
+                        {docPath && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc({ name: d.name as string, type: d.type as string, filePath: docPath })}
+                            className="text-xs text-primary-600 hover:text-primary-700 font-medium underline flex items-center gap-1.5 cursor-pointer bg-primary-50 dark:bg-primary-900/30 px-3 py-1.5 rounded-lg hover:bg-primary-100 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> View Document
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )
             )}
@@ -199,6 +356,89 @@ export default function StudentProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* In-app Document Viewer Modal */}
+      <Modal
+        isOpen={!!previewDoc}
+        onClose={() => { setPreviewDoc(null); setDocDataUrl(null); }}
+        title={previewDoc?.name || 'Document Preview'}
+        size="xl"
+      >
+        {previewDoc && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-gray-500 pb-2 border-b border-gray-100 dark:border-gray-800">
+              <span>Document Type: <strong className="text-gray-700 dark:text-gray-300 font-semibold">{previewDoc.type}</strong></span>
+              <div className="flex items-center gap-3">
+                {previewDoc.filePath && !previewDoc.filePath.startsWith('data:') && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenInSystem(previewDoc.filePath)}
+                    className="text-primary-600 hover:underline font-medium flex items-center gap-1 text-xs cursor-pointer bg-primary-50 dark:bg-primary-900/30 px-2.5 py-1 rounded-md"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Open in Default App
+                  </button>
+                )}
+                {docDataUrl && (
+                  <a
+                    href={docDataUrl}
+                    download={previewDoc.name}
+                    className="text-primary-600 hover:underline font-medium flex items-center gap-1 text-xs"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Download
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center min-h-[350px] max-h-[75vh] bg-gray-50 dark:bg-gray-800/40 rounded-xl p-2 overflow-auto border border-gray-100 dark:border-gray-800">
+              {loadingDoc ? (
+                <div className="flex flex-col items-center justify-center p-12">
+                  <LoadingSpinner message="Loading document..." />
+                </div>
+              ) : docDataUrl && (docDataUrl.startsWith('data:image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(previewDoc.name)) ? (
+                <img
+                  src={docDataUrl}
+                  alt={previewDoc.name}
+                  className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-sm"
+                />
+              ) : docDataUrl && (docDataUrl.startsWith('data:application/pdf') || docDataUrl.startsWith('data:') || /\.pdf$/i.test(previewDoc.name)) ? (
+                <embed
+                  src={docDataUrl}
+                  type="application/pdf"
+                  className="w-full h-[70vh] rounded-lg border border-gray-200 dark:border-gray-700 bg-white"
+                />
+              ) : (
+                <div className="text-center p-8">
+                  <FileText className="w-16 h-16 text-primary-500 mx-auto mb-3" />
+                  <p className="font-semibold text-base text-gray-800 dark:text-gray-200">{previewDoc.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">This document is ready to download.</p>
+                  {docDataUrl && (
+                    <a
+                      href={docDataUrl}
+                      download={previewDoc.name}
+                      className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+                    >
+                      <Download className="w-4 h-4" /> Download Document
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Type-to-confirm delete dialog */}
+      <TypeConfirmDialog
+        isOpen={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete Student"
+        message={`This will permanently delete ${studentName}'s complete record — fees, attendance, results, and documents. This action cannot be undone.`}
+        requiredText={studentName}
+        confirmText="Delete Student"
+        loading={deleting}
+      />
     </div>
   );
 }

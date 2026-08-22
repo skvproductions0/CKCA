@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, protocol, net } from 'electron';
 import path from 'path';
 import { registerIpcHandlers, cleanupSession } from './ipc';
 import { initializeDatabase, disconnectDatabase } from '../../server/database/client';
@@ -49,7 +49,31 @@ async function createWindow(): Promise<void> {
   });
 }
 
+import { pathToFileURL } from 'url';
+
+// Register a safe custom protocol to serve uploaded files.
+// Usage in renderer: <img src="localfile://C:/path/to/file.jpg" />
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'localfile', privileges: { secure: true, standard: false, supportFetchAPI: true, bypassCSP: true } },
+]);
+
 app.whenReady().then(async () => {
+  // Serve local filesystem files via localfile:// protocol
+  protocol.handle('localfile', (request) => {
+    try {
+      let rawPath = request.url.replace(/^localfile:\/\//i, '');
+      rawPath = decodeURIComponent(rawPath);
+      // Remove leading slash before drive letter on Windows (e.g., /C:/path -> C:/path)
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(rawPath)) {
+        rawPath = rawPath.slice(1);
+      }
+      return net.fetch(pathToFileURL(rawPath).toString());
+    } catch (e) {
+      console.error('Failed to fetch localfile:', e);
+      return new Response('File not found', { status: 404 });
+    }
+  });
+
   await initializeDatabase();
   registerIpcHandlers();
   await createWindow();

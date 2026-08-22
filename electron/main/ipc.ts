@@ -126,11 +126,11 @@ export function registerIpcHandlers(): void {
   handle('academicYears:list', async () => academicService.getAcademicYears());
   handle('academicYears:current', async () => academicService.getCurrentAcademicYear());
   handle('academicYears:setCurrent', async (event, id: unknown) => {
-    const session = requireAuth(event, '*');
+    const session = requireAuth(event);
     return academicService.setCurrentAcademicYear(id as string, session.userId);
   });
   handle('academicYears:create', async (event, data: unknown) => {
-    const session = requireAuth(event, '*');
+    const session = requireAuth(event);
     return academicService.createAcademicYear(data as Parameters<typeof academicService.createAcademicYear>[0], session.userId);
   });
 
@@ -281,6 +281,13 @@ export function registerIpcHandlers(): void {
     fileService.saveFile(Buffer.from(buffer as ArrayBuffer), filename as string, subfolder as string));
   handle('files:select', async (_event, filters?: unknown) =>
     fileService.selectFile(filters as Parameters<typeof fileService.selectFile>[0]));
+  handle('files:copyToUploads', async (_event, srcPath: unknown, subfolder: unknown) =>
+    fileService.copyFileToUploads(srcPath as string, (subfolder as string) || 'documents'));
+  handle('files:getUploadsPath', async () => fileService.getUploadsPath());
+  handle('files:open', async (_event, filePath: unknown) =>
+    fileService.openFile(filePath as string));
+  handle('files:readDataUrl', async (_event, filePath: unknown) =>
+    fileService.readFileAsDataUrl(filePath as string));
 }
 
 export function cleanupSession(webContentsId: number): void {

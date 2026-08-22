@@ -88,3 +88,12 @@ export async function apiCall<T>(fn: () => Promise<{ success: boolean; data?: T;
   if (!result.success) throw new Error(result.error || 'An error occurred');
   return result.data as T;
 }
+
+export function getLocalFileUrl(filePath?: string | null): string {
+  if (!filePath) return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:') || filePath.startsWith('localfile://')) {
+    return filePath;
+  }
+  const cleanPath = filePath.replace(/\\/g, '/');
+  return `localfile://${cleanPath}`;
+}

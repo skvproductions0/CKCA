@@ -104,16 +104,25 @@ export async function createUser(data: {
 }
 
 export async function createAuditLog(
-  userId: string | null,
+  userId: string | null | undefined,
   action: string,
   entity?: string,
   entityId?: string,
   details?: string
 ) {
-  const db = getPrismaClient();
-  await db.auditLog.create({
-    data: { userId, action, entity, entityId, details },
-  });
+  try {
+    const db = getPrismaClient();
+    let validUserId: string | null = null;
+    if (userId) {
+      const user = await db.user.findUnique({ where: { id: userId } });
+      if (user) validUserId = user.id;
+    }
+    await db.auditLog.create({
+      data: { userId: validUserId, action, entity, entityId, details },
+    });
+  } catch {
+    // Non-blocking audit log failure
+  }
 }
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
