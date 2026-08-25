@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users, GraduationCap, School, ClipboardCheck, Wallet,
-  AlertTriangle, UserPlus, TrendingUp,
+  AlertTriangle, UserPlus, TrendingUp, RefreshCw,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -10,44 +10,71 @@ import {
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { PageHeader, StatCard, LoadingSpinner } from '../components/ui/Common';
-import { formatCurrency, formatDate, apiCall } from '../utils/helpers';
+import { Button } from '../components/ui/Button';
+import { formatCurrency, formatDate, apiCall, cn } from '../utils/helpers';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 export default function DashboardPage() {
   const { academicYear } = useApp();
-  const { error: showError } = useToast();
+  const { error: showError, success } = useToast();
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date>(new Date());
 
-  useEffect(() => {
-    loadDashboard();
-  }, [academicYear?.id]);
-
-  const loadDashboard = async () => {
-    setLoading(true);
+  const loadDashboard = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    else setLoading(true);
     try {
       const stats = await apiCall(() => window.api.dashboard.getStats(academicYear?.id));
       setData(stats as Record<string, unknown>);
+      setLastSynced(new Date());
+      if (isManual) success('Dashboard synchronized successfully');
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [academicYear?.id]);
 
-  if (loading) return <LoadingSpinner message="Loading dashboard..." />;
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Auto-sync when window is focused
+  useEffect(() => {
+    const handleFocus = () => {
+      loadDashboard();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [loadDashboard]);
+
+  if (loading && !data) return <LoadingSpinner message="Loading dashboard..." />;
   if (!data) return null;
 
-  const stats = data.stats as Record<string, number>;
-  const charts = data.charts as Record<string, unknown[]>;
-  const activity = data.recentActivity as Record<string, unknown[]>;
+  const stats = (data.stats || {}) as Record<string, number>;
+  const charts = (data.charts || {}) as Record<string, unknown[]>;
+  const activity = (data.recentActivity || {}) as Record<string, unknown[]>;
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle={`Overview for academic year ${academicYear?.name || ''}`}
+        subtitle={`Overview for academic year ${academicYear?.name || 'All'} • Last synced: ${lastSynced.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => loadDashboard(true)}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={cn('w-4 h-4 text-primary-600', (refreshing || loading) && 'animate-spin')} />
+            {refreshing ? 'Syncing...' : 'Sync Dashboard'}
+          </Button>
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

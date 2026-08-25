@@ -134,7 +134,7 @@ export async function getTeacherById(id: string) {
   const db = getPrismaClient();
   const teacher = await db.teacher.findUnique({
     where: { id },
-    include: { sections: { include: { class: true } }, subjects: true },
+    include: { sections: { include: { class: true } }, subjects: true, documents: true },
   });
   if (!teacher) throw new Error('Teacher not found.');
   return teacher;
@@ -143,11 +143,65 @@ export async function getTeacherById(id: string) {
 export async function createTeacher(data: Record<string, unknown>, userId: string) {
   const db = getPrismaClient();
   try {
-    const count = await db.teacher.count();
-    const employeeId = `EMP-${String(count + 1).padStart(4, '0')}`;
+    const allTeachers = await db.teacher.findMany({ select: { employeeId: true } });
+    let maxNum = 0;
+    for (const t of allTeachers) {
+      const match = t.employeeId?.match(/(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    const employeeId = `EMP-${String(maxNum + 1).padStart(4, '0')}`;
+
+    const cleanData: Parameters<typeof db.teacher.create>[0]['data'] = {
+      employeeId,
+      name: String(data.name || '').trim(),
+      gender: data.gender ? String(data.gender) : null,
+      phone: data.phone ? String(data.phone).trim() : null,
+      email: data.email ? String(data.email).trim() : null,
+      qualification: data.qualification ? String(data.qualification).trim() : null,
+      subject: data.subject ? String(data.subject).trim() : null,
+      fatherName: data.fatherName ? String(data.fatherName).trim() : null,
+      motherName: data.motherName ? String(data.motherName).trim() : null,
+      emergencyContact: data.emergencyContact ? String(data.emergencyContact).trim() : null,
+      bloodGroup: data.bloodGroup ? String(data.bloodGroup) : null,
+      aadhaarNumber: data.aadhaarNumber ? String(data.aadhaarNumber).trim() : null,
+      panNumber: data.panNumber ? String(data.panNumber).trim() : null,
+      address: data.address ? String(data.address).trim() : null,
+      city: data.city ? String(data.city).trim() : null,
+      state: data.state ? String(data.state).trim() : null,
+      pincode: data.pincode ? String(data.pincode).trim() : null,
+      experience: data.experience ? String(data.experience).trim() : null,
+      maritalStatus: data.maritalStatus ? String(data.maritalStatus) : null,
+      photoPath: data.photoPath ? String(data.photoPath) : null,
+      salaryPaise: typeof data.salaryPaise === 'number' ? data.salaryPaise : 0,
+      status: data.status ? String(data.status) : 'ACTIVE',
+      dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth as string | Date) : null,
+      joiningDate: data.joiningDate ? new Date(data.joiningDate as string | Date) : null,
+    };
+
     const teacher = await db.teacher.create({
-      data: { ...data, employeeId } as Parameters<typeof db.teacher.create>[0]['data'],
+      data: cleanData,
     });
+
+    if (Array.isArray(data.documents)) {
+      for (const doc of data.documents as Array<{ name: string; type: string; filePath: string; fileSize?: number; mimeType?: string }>) {
+        if (doc.filePath) {
+          await db.document.create({
+            data: {
+              teacherId: teacher.id,
+              name: doc.name || 'Document',
+              type: doc.type || 'OTHER',
+              filePath: doc.filePath,
+              fileSize: doc.fileSize || 0,
+              mimeType: doc.mimeType || 'application/octet-stream',
+            },
+          });
+        }
+      }
+    }
+
     await createAuditLog(userId, 'TEACHER_CREATED', 'Teacher', teacher.id, teacher.name);
     return teacher;
   } catch (error) {
@@ -157,12 +211,167 @@ export async function createTeacher(data: Record<string, unknown>, userId: strin
 
 export async function updateTeacher(id: string, data: Record<string, unknown>, userId: string) {
   const db = getPrismaClient();
-  const teacher = await db.teacher.update({
-    where: { id },
-    data: data as Parameters<typeof db.teacher.update>[0]['data'],
-  });
-  await createAuditLog(userId, 'TEACHER_UPDATED', 'Teacher', id, teacher.name);
-  return teacher;
+  try {
+    const cleanData: Parameters<typeof db.teacher.update>[0]['data'] = {};
+    if (data.name !== undefined) cleanData.name = String(data.name).trim();
+    if (data.gender !== undefined) cleanData.gender = data.gender ? String(data.gender) : null;
+    if (data.phone !== undefined) cleanData.phone = data.phone ? String(data.phone).trim() : null;
+    if (data.email !== undefined) cleanData.email = data.email ? String(data.email).trim() : null;
+    if (data.qualification !== undefined) cleanData.qualification = data.qualification ? String(data.qualification).trim() : null;
+    if (data.subject !== undefined) cleanData.subject = data.subject ? String(data.subject).trim() : null;
+    if (data.fatherName !== undefined) cleanData.fatherName = data.fatherName ? String(data.fatherName).trim() : null;
+    if (data.motherName !== undefined) cleanData.motherName = data.motherName ? String(data.motherName).trim() : null;
+    if (data.emergencyContact !== undefined) cleanData.emergencyContact = data.emergencyContact ? String(data.emergencyContact).trim() : null;
+    if (data.bloodGroup !== undefined) cleanData.bloodGroup = data.bloodGroup ? String(data.bloodGroup) : null;
+    if (data.aadhaarNumber !== undefined) cleanData.aadhaarNumber = data.aadhaarNumber ? String(data.aadhaarNumber).trim() : null;
+    if (data.panNumber !== undefined) cleanData.panNumber = data.panNumber ? String(data.panNumber).trim() : null;
+    if (data.address !== undefined) cleanData.address = data.address ? String(data.address).trim() : null;
+    if (data.city !== undefined) cleanData.city = data.city ? String(data.city).trim() : null;
+    if (data.state !== undefined) cleanData.state = data.state ? String(data.state).trim() : null;
+    if (data.pincode !== undefined) cleanData.pincode = data.pincode ? String(data.pincode).trim() : null;
+    if (data.experience !== undefined) cleanData.experience = data.experience ? String(data.experience).trim() : null;
+    if (data.maritalStatus !== undefined) cleanData.maritalStatus = data.maritalStatus ? String(data.maritalStatus) : null;
+    if (data.photoPath !== undefined) cleanData.photoPath = data.photoPath ? String(data.photoPath) : null;
+    if (data.salaryPaise !== undefined) cleanData.salaryPaise = typeof data.salaryPaise === 'number' ? data.salaryPaise : 0;
+    if (data.status !== undefined) cleanData.status = String(data.status);
+    if (data.dateOfBirth !== undefined) {
+      cleanData.dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth as string | Date) : null;
+    }
+    if (data.joiningDate !== undefined) {
+      cleanData.joiningDate = data.joiningDate ? new Date(data.joiningDate as string | Date) : null;
+    }
+
+    const teacher = await db.teacher.update({
+      where: { id },
+      data: cleanData,
+    });
+
+    if (Array.isArray(data.documents)) {
+      // Delete existing teacher documents and re-insert
+      await db.document.deleteMany({ where: { teacherId: id } });
+      for (const doc of data.documents as Array<{ name: string; type: string; filePath: string; fileSize?: number; mimeType?: string }>) {
+        if (doc.filePath) {
+          await db.document.create({
+            data: {
+              teacherId: id,
+              name: doc.name || 'Document',
+              type: doc.type || 'OTHER',
+              filePath: doc.filePath,
+              fileSize: doc.fileSize || 0,
+              mimeType: doc.mimeType || 'application/octet-stream',
+            },
+          });
+        }
+      }
+    }
+
+    await createAuditLog(userId, 'TEACHER_UPDATED', 'Teacher', id, teacher.name);
+    return teacher;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function deleteTeacher(id: string, userId: string) {
+  return archiveTeacher(id, userId);
+}
+
+export async function archiveTeacher(id: string, userId: string) {
+  const db = getPrismaClient();
+  try {
+    const teacher = await db.teacher.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+    await createAuditLog(userId, 'TEACHER_ARCHIVED', 'Teacher', id, teacher.name);
+    return teacher;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function getDeletedTeachers(filters: { search?: string; page?: number; limit?: number } = {}) {
+  const db = getPrismaClient();
+  const page = filters.page || 1;
+  const limit = filters.limit || 20;
+  const skip = (page - 1) * limit;
+
+  const where: Record<string, unknown> = { deletedAt: { not: null } };
+  if (filters.search) {
+    where.OR = [
+      { name: { contains: filters.search } },
+      { employeeId: { contains: filters.search } },
+      { phone: { contains: filters.search } },
+      { email: { contains: filters.search } },
+      { subject: { contains: filters.search } },
+    ];
+  }
+
+  const [teachers, total] = await Promise.all([
+    db.teacher.findMany({
+      where,
+      orderBy: { deletedAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    db.teacher.count({ where }),
+  ]);
+
+  return { teachers, total, page, totalPages: Math.ceil(total / limit) };
+}
+
+export async function restoreTeacher(id: string, userId: string) {
+  const db = getPrismaClient();
+  try {
+    const teacher = await db.teacher.update({
+      where: { id },
+      data: { deletedAt: null, status: 'ACTIVE' },
+    });
+    await createAuditLog(userId, 'TEACHER_RESTORED', 'Teacher', id, teacher.name);
+    return teacher;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function permanentDeleteTeacher(id: string, userId: string) {
+  const db = getPrismaClient();
+  try {
+    const teacher = await db.teacher.findUnique({ where: { id } });
+    if (!teacher) throw new Error('Teacher not found');
+
+    // Delete associated documents first
+    await db.document.deleteMany({ where: { teacherId: id } });
+
+    // Permanent delete
+    await db.teacher.delete({ where: { id } });
+
+    await createAuditLog(userId, 'TEACHER_PERMANENTLY_DELETED', 'Teacher', id, teacher.name);
+    return true;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function emptyTeacherRecycleBin(userId: string) {
+  const db = getPrismaClient();
+  try {
+    const deletedTeachers = await db.teacher.findMany({
+      where: { deletedAt: { not: null } },
+      select: { id: true },
+    });
+
+    const teacherIds = deletedTeachers.map((t) => t.id);
+    if (teacherIds.length > 0) {
+      await db.document.deleteMany({ where: { teacherId: { in: teacherIds } } });
+      await db.teacher.deleteMany({ where: { id: { in: teacherIds } } });
+    }
+
+    await createAuditLog(userId, 'TEACHER_RECYCLE_BIN_EMPTIED', 'Teacher', 'all', `${teacherIds.length} teachers permanently deleted`);
+    return { count: teacherIds.length };
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
 }
 
 export async function getSubjects(classId?: string) {
@@ -196,6 +405,16 @@ export async function updateSubject(id: string, data: Record<string, unknown>, u
     include: { class: true, teacher: true },
   });
   await createAuditLog(userId, 'SUBJECT_UPDATED', 'Subject', id, subject.name);
+  return subject;
+}
+
+export async function deleteSubject(id: string, userId: string) {
+  const db = getPrismaClient();
+  const subject = await db.subject.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  });
+  await createAuditLog(userId, 'SUBJECT_DELETED', 'Subject', id, subject.name);
   return subject;
 }
 

@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, MoreVertical, Eye, Trash2, Users } from 'lucide-react';
+import { Plus, Search, MoreVertical, Eye, Trash2, Users, Archive } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, LoadingSpinner, EmptyState, Badge, Pagination } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { TypeConfirmDialog } from '../../components/ui/Modal';
-import { formatCurrency, GENDER_OPTIONS, apiCall, getLocalFileUrl } from '../../utils/helpers';
+import { formatCurrency, apiCall, getLocalFileUrl } from '../../utils/helpers';
 import { Student } from '../../types';
 
 /* ── 3-dot action menu per row ─────────────────────────────────────────── */
@@ -68,7 +68,6 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
-  const [genderFilter, setGenderFilter] = useState('');
   const [feeFilter, setFeeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -78,7 +77,7 @@ export default function StudentsPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { loadClasses(); }, []);
-  useEffect(() => { loadStudents(); }, [search, classFilter, genderFilter, feeFilter, statusFilter, page, academicYear?.id]);
+  useEffect(() => { loadStudents(); }, [search, classFilter, feeFilter, statusFilter, page, academicYear?.id]);
 
   const loadClasses = async () => {
     try {
@@ -93,7 +92,6 @@ export default function StudentsPage() {
       const result = await apiCall(() => window.api.students.list({
         search,
         classId: classFilter || undefined,
-        gender: genderFilter || undefined,
         feeStatus: feeFilter || undefined,
         status: statusFilter || undefined,
         academicYearId: academicYear?.id,
@@ -114,7 +112,7 @@ export default function StudentsPage() {
     setDeleting(true);
     try {
       await apiCall(() => window.api.students.archive(deleteStudent.id));
-      success('Student deleted successfully');
+      success('Student moved to Recycle Bin successfully');
       setDeleteStudent(null);
       loadStudents();
     } catch (err) {
@@ -144,11 +142,21 @@ export default function StudentsPage() {
       <PageHeader
         title="Students"
         subtitle="Manage student records"
-        actions={<Button onClick={() => navigate('/students/add')}><Plus className="w-4 h-4" /> Add Student</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => navigate('/students/deleted')}>
+              <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              Recycle Bin
+            </Button>
+            <Button onClick={() => navigate('/students/add')}>
+              <Plus className="w-4 h-4" /> Add Student
+            </Button>
+          </div>
+        }
       />
 
       <div className="card p-4 mb-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           <div className="sm:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -159,12 +167,10 @@ export default function StudentsPage() {
             />
           </div>
           <Select placeholder="All Classes" options={classes.map(c => ({ value: c.id, label: `Class ${c.name}` }))} value={classFilter} onChange={e => { setClassFilter(e.target.value); setPage(1); }} />
-          <Select placeholder="All Genders" options={GENDER_OPTIONS} value={genderFilter} onChange={e => { setGenderFilter(e.target.value); setPage(1); }} />
           <Select placeholder="Fee Status" options={[{ value: 'paid', label: 'Paid' }, { value: 'partial', label: 'Partial' }, { value: 'pending', label: 'Pending' }]} value={feeFilter} onChange={e => { setFeeFilter(e.target.value); setPage(1); }} />
           <Select
             placeholder="All Statuses"
             options={[
-              { value: '', label: 'All Statuses' },
               { value: 'ACTIVE', label: 'Active' },
               { value: 'INACTIVE', label: 'Inactive' },
               { value: 'TRANSFERRED', label: 'Transferred' },
@@ -248,10 +254,10 @@ export default function StudentsPage() {
         isOpen={!!deleteStudent}
         onClose={() => setDeleteStudent(null)}
         onConfirm={handleDelete}
-        title="Delete Student"
-        message={`This will permanently delete ${deleteStudent?.name}'s record including all fee history, attendance, and results. This action cannot be undone.`}
+        title="Move Student to Recycle Bin"
+        message={`This will remove ${deleteStudent?.name} from the active student list and move them to the Recycle Bin. You can restore this student anytime without losing any fee or academic history.`}
         requiredText={deleteStudent?.name ?? ''}
-        confirmText="Delete Student"
+        confirmText="Move to Recycle Bin"
         loading={deleting}
       />
     </div>

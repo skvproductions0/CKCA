@@ -10,14 +10,18 @@ import DashboardPage from './pages/DashboardPage';
 import StudentsPage from './pages/students/StudentsPage';
 import StudentProfilePage from './pages/students/StudentProfilePage';
 import StudentFormPage from './pages/students/StudentFormPage';
+import DeletedStudentsPage from './pages/students/DeletedStudentsPage';
 import ClassesPage from './pages/classes/ClassesPage';
 import TeachersPage from './pages/teachers/TeachersPage';
+import TeacherFormPage from './pages/teachers/TeacherFormPage';
+import DeletedTeachersPage from './pages/teachers/DeletedTeachersPage';
 import FeesPage from './pages/fees/FeesPage';
 import PaymentsPage from './pages/fees/PaymentsPage';
 import PaymentFormPage from './pages/fees/PaymentFormPage';
 import AttendancePage from './pages/attendance/AttendancePage';
 import ResultsPage from './pages/results/ResultsPage';
 import AdmissionsPage from './pages/admissions/AdmissionsPage';
+import AdmissionFormPage from './pages/admissions/AdmissionFormPage';
 import SubjectsPage from './pages/subjects/SubjectsPage';
 import ExaminationsPage from './pages/examinations/ExaminationsPage';
 import ReportsPage from './pages/reports/ReportsPage';
@@ -40,12 +44,17 @@ export default function App() {
                 <Route element={<MainLayout />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/students" element={<StudentsPage />} />
+                  <Route path="/students/deleted" element={<DeletedStudentsPage />} />
                   <Route path="/students/add" element={<StudentFormPage />} />
                   <Route path="/students/:id" element={<StudentProfilePage />} />
                   <Route path="/students/:id/edit" element={<StudentFormPage />} />
                   <Route path="/admissions" element={<AdmissionsPage />} />
+                  <Route path="/admissions/new" element={<AdmissionFormPage />} />
                   <Route path="/classes" element={<ClassesPage />} />
                   <Route path="/teachers" element={<TeachersPage />} />
+                  <Route path="/teachers/deleted" element={<DeletedTeachersPage />} />
+                  <Route path="/teachers/add" element={<TeacherFormPage />} />
+                  <Route path="/teachers/:id/edit" element={<TeacherFormPage />} />
                   <Route path="/subjects" element={<SubjectsPage />} />
                   <Route path="/fees" element={<FeesPage />} />
                   <Route path="/payments" element={<PaymentsPage />} />

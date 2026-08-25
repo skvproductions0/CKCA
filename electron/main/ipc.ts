@@ -94,6 +94,21 @@ export function registerIpcHandlers(): void {
     const session = requireAuth(event, 'students');
     return studentService.archiveStudent(id as string, session.userId);
   });
+  handle('students:listDeleted', async (_event, filters?: unknown) => {
+    return studentService.getDeletedStudents(filters as Parameters<typeof studentService.getDeletedStudents>[0]);
+  }, 'students');
+  handle('students:restore', async (event, id: unknown) => {
+    const session = requireAuth(event, 'students');
+    return studentService.restoreStudent(id as string, session.userId);
+  });
+  handle('students:permanentDelete', async (event, id: unknown) => {
+    const session = requireAuth(event, 'students');
+    return studentService.permanentDeleteStudent(id as string, session.userId);
+  });
+  handle('students:emptyRecycleBin', async (event) => {
+    const session = requireAuth(event, 'students');
+    return studentService.emptyRecycleBin(session.userId);
+  });
   handle('students:attendance', async (_event, id: unknown, yearId?: unknown) =>
     studentService.getStudentAttendanceSummary(id as string, yearId as string | undefined), 'students.view');
 
@@ -136,6 +151,7 @@ export function registerIpcHandlers(): void {
 
   // Teachers
   handle('teachers:list', async (_event, filters?: unknown) => academicService.getTeachers(filters as Parameters<typeof academicService.getTeachers>[0]), 'teachers');
+  handle('teachers:listDeleted', async (_event, filters?: unknown) => academicService.getDeletedTeachers(filters as Parameters<typeof academicService.getDeletedTeachers>[0]), 'teachers');
   handle('teachers:get', async (_event, id: unknown) => academicService.getTeacherById(id as string), 'teachers');
   handle('teachers:create', async (event, data: unknown) => {
     const session = requireAuth(event, 'teachers');
@@ -144,6 +160,26 @@ export function registerIpcHandlers(): void {
   handle('teachers:update', async (event, id: unknown, data: unknown) => {
     const session = requireAuth(event, 'teachers');
     return academicService.updateTeacher(id as string, data as Record<string, unknown>, session.userId);
+  });
+  handle('teachers:delete', async (event, id: unknown) => {
+    const session = requireAuth(event, 'teachers');
+    return academicService.archiveTeacher(id as string, session.userId);
+  });
+  handle('teachers:archive', async (event, id: unknown) => {
+    const session = requireAuth(event, 'teachers');
+    return academicService.archiveTeacher(id as string, session.userId);
+  });
+  handle('teachers:restore', async (event, id: unknown) => {
+    const session = requireAuth(event, 'teachers');
+    return academicService.restoreTeacher(id as string, session.userId);
+  });
+  handle('teachers:permanentDelete', async (event, id: unknown) => {
+    const session = requireAuth(event, 'teachers');
+    return academicService.permanentDeleteTeacher(id as string, session.userId);
+  });
+  handle('teachers:emptyRecycleBin', async (event) => {
+    const session = requireAuth(event, 'teachers');
+    return academicService.emptyTeacherRecycleBin(session.userId);
   });
 
   // Subjects
@@ -155,6 +191,10 @@ export function registerIpcHandlers(): void {
   handle('subjects:update', async (event, id: unknown, data: unknown) => {
     const session = requireAuth(event, 'subjects');
     return academicService.updateSubject(id as string, data as Record<string, unknown>, session.userId);
+  });
+  handle('subjects:delete', async (event, id: unknown) => {
+    const session = requireAuth(event, 'subjects');
+    return academicService.deleteSubject(id as string, session.userId);
   });
 
   // Exams & Results

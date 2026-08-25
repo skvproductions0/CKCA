@@ -1,8 +1,18 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { CheckCircle2, ArrowLeft, ArrowRight, Save, X, Upload, Trash2, CircleAlert, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  User,
+  Upload,
+  Trash2,
+  Eye,
+  FileText,
+  Save,
+  CheckCircle2,
+  Download,
+  Plus,
+  Wallet,
+} from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
-import { PageHeader, LoadingSpinner } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
@@ -14,23 +24,6 @@ interface WizardProps {
   onSuccess?: () => void;
 }
 
-type StepKey = 1 | 2 | 3 | 4 | 5 | 6;
-
-interface StepItem {
-  id: StepKey;
-  title: string;
-}
-
-const STEPS: StepItem[] = [
-  { id: 1, title: 'Student Details' },
-  { id: 2, title: 'Parent / Guardian' },
-  { id: 3, title: 'Academic Details' },
-  { id: 4, title: 'Documents' },
-  { id: 5, title: 'Fee Setup' },
-  { id: 6, title: 'Review & Confirm' },
-];
-
-// Document type options grouped by person
 const STUDENT_DOC_TYPES = [
   { value: 'STUDENT_AADHAAR', label: "Student's Aadhaar Card" },
   { value: 'BIRTH_CERTIFICATE', label: 'Birth Certificate' },
@@ -51,51 +44,36 @@ const PARENT_DOC_TYPES = [
   { value: 'INCOME_PROOF', label: 'Income Proof' },
 ];
 
-const ALL_DOC_TYPES = [...STUDENT_DOC_TYPES, ...PARENT_DOC_TYPES, { value: 'OTHER', label: 'Other Document' }];
-
-function sanitizeText(value?: string) {
-  return value ? value.trim() : '';
-}
-
 function formatAadhaar(value: string) {
-  // Remove non-digits
   const digits = value.replace(/\D/g, '');
-  // Format as XXXX XXXX XXXX
   const parts = digits.match(/.{1,4}/g) || [];
   return parts.join(' ');
 }
 
-export default function NewAdmissionWizard({ onClose, onSuccess }: WizardProps) {
-  const { academicYear, academicYears, refreshSettings } = useApp();
-  const { success, error: showError } = useToast();
-  const [step, setStep] = useState<StepKey>(1);
-  const [loading, setLoading] = useState(false);
-  const [classes, setClasses] = useState<{ id: string; name: string; sections: { id: string; name: string }[] }[]>([]);
-  const [feeCategories, setFeeCategories] = useState<{ id: string; name: string }[]>([]);
-  const [draftSaved, setDraftSaved] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<Array<{ id: string; name: string; filePath?: string; fileSize?: number; mimeType?: string; type: string; docLabel?: string }>>([]);
-  const [stepErrors, setStepErrors] = useState<Record<string, string | undefined>>({});
-  const [showAddYearModal, setShowAddYearModal] = useState(false);
-  const [newYearForm, setNewYearForm] = useState({
-    name: `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(-2)}`,
-    startDate: `${new Date().getFullYear()}-04-01`,
-    endDate: `${new Date().getFullYear() + 1}-03-31`,
-    isCurrent: true,
-  });
-  const [savingYear, setSavingYear] = useState(false);
-  const [activeDocType, setActiveDocType] = useState<string | null>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
+interface DocItem {
+  id: string;
+  name: string;
+  type: string;
+  filePath: string;
+  fileSize?: number;
+  mimeType?: string;
+  docLabel?: string;
+}
 
+export default function NewAdmissionWizard({ onClose, onSuccess }: WizardProps) {
+  const { academicYear, academicYears } = useApp();
+  const { success, error: showError } = useToast();
+
+  const [loading, setLoading] = useState(false);
+  const [classes, setClasses] = useState<
+    { id: string; name: string; sections: { id: string; name: string }[] }[]
+  >([]);
+  const [feeCategories, setFeeCategories] = useState<{ id: string; name: string }[]>([]);
+
+  // Form State
   const [form, setForm] = useState({
-    fullName: '',
-    dateOfBirth: '',
-    gender: '',
-    bloodGroup: '',
-    aadhaarNumber: '',
-    previousSchool: '',
-    photoPath: '',
+    name: '',
+    academicYearId: '',
     fatherName: '',
     fatherMobile: '',
     fatherOccupation: '',
@@ -108,783 +86,1024 @@ export default function NewAdmissionWizard({ onClose, onSuccess }: WizardProps) 
     guardianMobile: '',
     guardianEmail: '',
     guardianRelation: '',
+    dateOfBirth: '',
+    gender: 'MALE',
+    bloodGroup: '',
+    aadhaarNumber: '',
+    phone: '',
+    email: '',
     address: '',
     city: '',
     state: '',
     pincode: '',
-    academicYearId: academicYear?.id || '',
     classId: '',
     sectionId: '',
     rollNumber: '',
     admissionDate: new Date().toISOString().split('T')[0],
+    emergencyContact: '',
+    previousSchool: '',
     previousClass: '',
     tcNumber: '',
-    admissionStatus: 'ENROLLED',
-    feeCategoryId: '',
-    feeAmount: '0',
-    discount: '0',
-    paidAmount: '0',
-    paymentMethod: 'CASH',
-    paymentReference: '',
+    remarks: '',
+    photoPath: '',
+    status: 'ACTIVE',
   });
 
-  useEffect(() => { loadInitialData(); }, []);
+  // Fee Form State
+  const [feeForm, setFeeForm] = useState({
+    feeCategoryId: '',
+    totalAmount: '',
+    paidAmount: '',
+    paymentMethod: 'CASH',
+    paymentDate: new Date().toISOString().split('T')[0],
+    remarks: 'Admission fee payment',
+  });
+
+  const [documents, setDocuments] = useState<DocItem[]>([]);
+  const [previewDoc, setPreviewDoc] = useState<DocItem | null>(null);
+  const [showOtherNameModal, setShowOtherNameModal] = useState(false);
+  const [pendingOtherName, setPendingOtherName] = useState('');
+  const [activeDocType, setActiveDocType] = useState<string | null>(null);
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!form.academicYearId && academicYears.length > 0) {
-      const active = academicYears.find(y => y.isCurrent) || academicYears[0];
-      if (active) setForm(prev => ({ ...prev, academicYearId: active.id }));
+    loadClasses();
+    loadFeeCategories();
+    if (academicYear?.id) {
+      setForm((prev) => ({ ...prev, academicYearId: academicYear.id }));
     }
-  }, [academicYears, form.academicYearId]);
+  }, [academicYear]);
 
-  const loadInitialData = async () => {
-    setLoading(true);
+  const loadClasses = async () => {
     try {
-      const [classData, feeData] = await Promise.all([
-        apiCall(() => window.api.classes.list()),
-        apiCall(() => window.api.fees.getCategories()),
-        refreshSettings(),
-      ]);
-      setClasses(classData as typeof classes);
-      setFeeCategories((feeData as { categories?: { id: string; name: string }[] }).categories || feeData as { id: string; name: string }[]);
-      if (academicYear?.id) setForm(prev => ({ ...prev, academicYearId: academicYear.id }));
-    } catch (err) {
-      showError(err instanceof Error ? err.message : 'Failed to load admission form');
-    } finally {
-      setLoading(false);
+      const data = await apiCall(() => window.api.classes.list());
+      setClasses(data as typeof classes);
+    } catch {
+      // ignore
     }
   };
 
-  const handleCreateAcademicYear = async () => {
-    if (!newYearForm.name.trim()) {
-      showError('Please enter an academic year name (e.g. 2026-27).');
-      return;
-    }
-    if (!newYearForm.startDate || !newYearForm.endDate) {
-      showError('Please provide both start and end dates.');
-      return;
-    }
-    setSavingYear(true);
+  const loadFeeCategories = async () => {
     try {
-      const created = await apiCall<{ id: string; name: string }>(async () => {
-        const res = await window.api.academicYears.create({
-          name: newYearForm.name.trim(),
-          startDate: newYearForm.startDate,
-          endDate: newYearForm.endDate,
-          isCurrent: newYearForm.isCurrent,
-        });
-        return res as { success: boolean; data?: { id: string; name: string }; error?: string };
-      });
-      await refreshSettings();
-      if (created?.id) {
-        setForm(prev => ({ ...prev, academicYearId: created.id }));
-      }
-      setShowAddYearModal(false);
-      success(`Academic Year ${newYearForm.name} created and selected!`);
-    } catch (err) {
-      showError(err instanceof Error ? err.message : 'Failed to create academic year');
-    } finally {
-      setSavingYear(false);
+      const cats = await apiCall(() => window.api.fees.getCategories());
+      setFeeCategories((cats as { id: string; name: string }[]) || []);
+    } catch {
+      // ignore
     }
   };
 
-  const selectedClass = useMemo(() => classes.find(c => c.id === form.classId), [classes, form.classId]);
-  const feeTotal = Math.max(0, Number(form.feeAmount || 0) - Number(form.discount || 0));
-  const balance = Math.max(0, feeTotal - Number(form.paidAmount || 0));
-
-  // Strip spaces from aadhaar for validation
-  const aadhaarDigitsOnly = form.aadhaarNumber.replace(/\D/g, '');
-
-  const validateStep = (currentStep: StepKey) => {
-    if (currentStep === 1) {
-      if (!sanitizeText(form.fullName)) { showError('Full name is required.'); return false; }
-      if (!form.dateOfBirth) { showError('Date of birth is required.'); return false; }
-      if (!form.gender) { showError('Gender is required.'); return false; }
-      const dob = new Date(form.dateOfBirth);
-      if (Number.isNaN(dob.getTime())) { showError('Please enter a valid date of birth.'); return false; }
-      if (aadhaarDigitsOnly && aadhaarDigitsOnly.length !== 12) {
-        showError('Aadhaar number must be exactly 12 digits.');
-        return false;
-      }
-      return true;
-    }
-    if (currentStep === 2) {
-      const fatherName = sanitizeText(form.fatherName);
-      const fatherMobile = sanitizeText(form.fatherMobile);
-      const motherName = sanitizeText(form.motherName);
-      const motherMobile = sanitizeText(form.motherMobile);
-      const guardianName = sanitizeText(form.guardianName);
-      const guardianMobile = sanitizeText(form.guardianMobile);
-      const guardianRelation = sanitizeText(form.guardianRelation);
-      const address = sanitizeText(form.address);
-      const city = sanitizeText(form.city);
-      const state = sanitizeText(form.state);
-      const pincode = sanitizeText(form.pincode);
-
-      const errors: Record<string, string> = {};
-      if (!address) errors.address = 'Address is required.';
-      if (!city) errors.city = 'City is required.';
-      if (!state) errors.state = 'State is required.';
-      if (!pincode) {
-        errors.pincode = 'PIN code is required.';
-      } else if (!/^\d{6}$/.test(pincode)) {
-        errors.pincode = 'PIN code must be exactly 6 digits.';
-      }
-      if (fatherMobile && !/^\d{10}$/.test(fatherMobile)) errors.fatherMobile = 'Mobile must be 10 digits.';
-      if (motherMobile && !/^\d{10}$/.test(motherMobile)) errors.motherMobile = 'Mobile must be 10 digits.';
-      if (guardianMobile && !/^\d{10}$/.test(guardianMobile)) errors.guardianMobile = 'Mobile must be 10 digits.';
-
-      const fatherComplete = fatherName && fatherMobile;
-      const motherComplete = motherName && motherMobile;
-      const guardianComplete = guardianName && guardianMobile;
-      if (!fatherComplete && !motherComplete && !guardianComplete) {
-        errors._step = 'Provide at least one complete parent or guardian contact (name + mobile).';
-      }
-      if (guardianName && !guardianRelation) {
-        errors.guardianRelation = 'Guardian relationship is required when guardian name is provided.';
-      }
-
-      if (Object.keys(errors).length > 0) {
-        setStepErrors(errors);
-        showError('Please correct the highlighted fields and required contact details.');
-        return false;
-      }
-      setStepErrors({});
-      return true;
-    }
-    if (currentStep === 3) {
-      if (!form.academicYearId) { showError('Academic year is required.'); return false; }
-      if (!form.classId) { showError('Class is required.'); return false; }
-      if (!form.admissionDate) { showError('Admission date is required.'); return false; }
-      return true;
-    }
-    if (currentStep === 5) {
-      if (Number(form.feeAmount) < 0 || Number(form.discount) < 0 || Number(form.paidAmount) < 0) { showError('Fees and payments cannot be negative.'); return false; }
-      if (Number(form.paidAmount) > feeTotal) { showError('Initial payment cannot exceed the payable amount.'); return false; }
-      return true;
-    }
-    return true;
-  };
-
-  const goNext = () => {
-    if (!validateStep(step)) return;
-    setStep(prev => (prev < 6 ? (prev + 1) as StepKey : prev));
-  };
-
-  const goPrev = () => setStep(prev => (prev > 1 ? (prev - 1) as StepKey : prev));
-
-  const handlePhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showError('Photo must be less than 2MB');
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      setSelectedPhoto(dataUrl);
-      setForm(prev => ({ ...prev, photoPath: dataUrl }));
-
-      let savedPath = dataUrl;
-      try {
-        const buffer = await file.arrayBuffer();
-        savedPath = await apiCall<string>(() => window.api.files.save(buffer, file.name, 'photos'));
-      } catch {
-        savedPath = dataUrl;
-      }
-
-      const fileMeta = {
-        id: `${Date.now()}`,
-        name: file.name,
-        filePath: savedPath,
-        type: 'PHOTO',
-        fileSize: file.size,
-        mimeType: file.type || 'image/jpeg',
-      };
-      setDocuments(prev => prev.filter(doc => doc.type !== 'PHOTO').concat(fileMeta));
-      success('Photo uploaded & preview ready');
+    reader.onloadend = () => {
+      setForm((prev) => ({ ...prev, photoPath: reader.result as string }));
+      success('Photo attached');
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  const removePhoto = () => {
-    setSelectedPhoto(null);
-    setForm(prev => ({ ...prev, photoPath: '' }));
-    setDocuments(prev => prev.filter(doc => doc.type !== 'PHOTO'));
+  const triggerDocUpload = (type: string) => {
+    if (type === 'OTHER') {
+      setPendingOtherName('');
+      setShowOtherNameModal(true);
+    } else {
+      setActiveDocType(type);
+      docInputRef.current?.click();
+    }
   };
 
-  const triggerUploadDoc = (docType: string) => {
-    setActiveDocType(docType);
+  const confirmOtherDocName = () => {
+    if (!pendingOtherName.trim()) {
+      showError('Please enter a document name');
+      return;
+    }
+    setShowOtherNameModal(false);
+    setActiveDocType('OTHER');
     docInputRef.current?.click();
   };
 
-  const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    const docType = activeDocType;
-    if (!file || !docType) return;
-    const label = ALL_DOC_TYPES.find(d => d.value === docType)?.label || docType;
+    if (!file || !activeDocType) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showError('Document must be less than 5MB');
+      return;
+    }
+
+    const docTypeInfo = [...STUDENT_DOC_TYPES, ...PARENT_DOC_TYPES].find(
+      (d) => d.value === activeDocType
+    );
+    const label =
+      activeDocType === 'OTHER'
+        ? pendingOtherName.trim() || 'Other Document'
+        : docTypeInfo?.label || activeDocType;
 
     const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      try {
-        const buffer = await file.arrayBuffer();
-        await apiCall<string>(() => window.api.files.save(buffer, file.name, 'documents'));
-      } catch {
-        // saved in memory
-      }
-
-      setDocuments(prev => prev.filter(d => d.type !== docType).concat({
-        id: `${Date.now()}`,
+    reader.onloadend = () => {
+      const newDoc: DocItem = {
+        id: `${Date.now()}-${Math.random()}`,
         name: file.name,
-        filePath: dataUrl,
-        type: docType,
-        docLabel: label,
+        type: activeDocType,
+        filePath: reader.result as string,
         fileSize: file.size,
         mimeType: file.type || 'application/octet-stream',
-      }));
-      success(`${label} uploaded`);
+        docLabel: label,
+      };
+
+      setDocuments((prev) => [
+        ...prev.filter((d) => d.type !== activeDocType || activeDocType === 'OTHER'),
+        newDoc,
+      ]);
+      success(`${label} attached`);
+      setActiveDocType(null);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  const removeDocument = (id: string) => setDocuments(prev => prev.filter(doc => doc.id !== id));
-
-  const saveDraft = async () => {
-    try {
-      setLoading(true);
-      const payload = buildPayload(true);
-      await apiCall(() => window.api.admissions.draft(payload));
-      setDraftSaved(true);
-      success('Draft saved successfully');
-    } catch (err) {
-      showError(err instanceof Error ? err.message : 'Unable to save draft');
-    } finally {
-      setLoading(false);
-    }
+  const removeDoc = (id: string) => {
+    setDocuments((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const buildPayload = (draft = false) => ({
-    details: {
-      fullName: sanitizeText(form.fullName),
-      dateOfBirth: form.dateOfBirth,
-      gender: form.gender,
-      bloodGroup: form.bloodGroup,
-      aadhaarNumber: aadhaarDigitsOnly, // always store raw digits
-      previousSchool: sanitizeText(form.previousSchool),
-      photoPath: form.photoPath,
-    },
-    parent: {
-      fatherName: sanitizeText(form.fatherName),
-      fatherMobile: sanitizeText(form.fatherMobile),
-      fatherOccupation: sanitizeText(form.fatherOccupation),
-      fatherEmail: sanitizeText(form.fatherEmail),
-      motherName: sanitizeText(form.motherName),
-      motherMobile: sanitizeText(form.motherMobile),
-      motherOccupation: sanitizeText(form.motherOccupation),
-      motherEmail: sanitizeText(form.motherEmail),
-      guardianName: sanitizeText(form.guardianName),
-      guardianMobile: sanitizeText(form.guardianMobile),
-      guardianEmail: sanitizeText(form.guardianEmail),
-      guardianRelation: sanitizeText(form.guardianRelation),
-      address: sanitizeText(form.address),
-      city: sanitizeText(form.city),
-      state: sanitizeText(form.state),
-      pincode: sanitizeText(form.pincode),
-    },
-    academic: {
-      academicYearId: form.academicYearId,
-      classId: form.classId,
-      sectionId: form.sectionId,
-      rollNumber: sanitizeText(form.rollNumber),
-      admissionDate: form.admissionDate,
-      previousClass: sanitizeText(form.previousClass),
-      tcNumber: sanitizeText(form.tcNumber),
-      admissionStatus: form.admissionStatus,
-    },
-    documents,
-    fee: {
-      feeCategoryId: form.feeCategoryId,
-      amount: Number(form.feeAmount || 0),
-      discount: Number(form.discount || 0),
-      paidAmount: Number(form.paidAmount || 0),
-      paymentMethod: form.paymentMethod,
-      paymentReference: sanitizeText(form.paymentReference),
-    },
-    files: documents,
-    draft,
-    remarks: draft ? 'Draft saved' : 'Admission created from wizard',
-  });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  const handleConfirm = async () => {
+    if (!form.name.trim()) {
+      showError('Student name is required');
+      return;
+    }
+
+    const aadhaarDigits = form.aadhaarNumber.replace(/\D/g, '');
+    if (aadhaarDigits.length > 0 && aadhaarDigits.length !== 12) {
+      showError('Aadhaar Number must be exactly 12 digits');
+      return;
+    }
+
+    setLoading(true);
     try {
-      setLoading(true);
-      const payload = buildPayload(false);
+      const sanitizeStr = (val?: string) => (val && val.trim() ? val.trim() : '');
+
+      const payload = {
+        details: {
+          fullName: form.name.trim(),
+          dateOfBirth: form.dateOfBirth,
+          gender: form.gender || 'MALE',
+          bloodGroup: sanitizeStr(form.bloodGroup),
+          aadhaarNumber: aadhaarDigits || '',
+          previousSchool: sanitizeStr(form.previousSchool),
+          photoPath: form.photoPath || '',
+        },
+        parent: {
+          fatherName: sanitizeStr(form.fatherName),
+          fatherMobile: sanitizeStr(form.fatherMobile),
+          fatherOccupation: sanitizeStr(form.fatherOccupation),
+          fatherEmail: sanitizeStr(form.fatherEmail),
+          motherName: sanitizeStr(form.motherName),
+          motherMobile: sanitizeStr(form.motherMobile),
+          motherOccupation: sanitizeStr(form.motherOccupation),
+          motherEmail: sanitizeStr(form.motherEmail),
+          guardianName: sanitizeStr(form.guardianName),
+          guardianMobile: sanitizeStr(form.guardianMobile),
+          guardianEmail: sanitizeStr(form.guardianEmail),
+          guardianRelation: sanitizeStr(form.guardianRelation),
+          address: sanitizeStr(form.address),
+          city: sanitizeStr(form.city),
+          state: sanitizeStr(form.state),
+          pincode: sanitizeStr(form.pincode),
+        },
+        academic: {
+          academicYearId: form.academicYearId || academicYear?.id,
+          classId: sanitizeStr(form.classId),
+          sectionId: sanitizeStr(form.sectionId),
+          rollNumber: sanitizeStr(form.rollNumber),
+          admissionDate: form.admissionDate,
+          previousClass: sanitizeStr(form.previousClass),
+          tcNumber: sanitizeStr(form.tcNumber),
+          admissionStatus: 'ENROLLED',
+        },
+        documents: documents.map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          type: doc.type,
+          filePath: doc.filePath,
+          fileSize: doc.fileSize || 0,
+          mimeType: doc.mimeType || 'application/octet-stream',
+        })),
+        fee: {
+          feeCategoryId: feeForm.feeCategoryId || undefined,
+          amount: Number(feeForm.totalAmount || feeForm.paidAmount || 0),
+          discount: 0,
+          paidAmount: Number(feeForm.paidAmount || 0),
+          paymentMethod: feeForm.paymentMethod || 'CASH',
+          paymentReference: sanitizeStr(feeForm.remarks),
+        },
+        files: documents,
+        draft: false,
+        remarks: sanitizeStr(form.remarks) || 'New Admission Application',
+      };
+
       await apiCall(() => window.api.admissions.wizard(payload));
-      success('Admission completed successfully');
+
+      if (Number(feeForm.paidAmount || 0) > 0) {
+        success(`Admission completed & payment of ₹${Number(feeForm.paidAmount).toLocaleString()} recorded!`);
+      } else {
+        success('Admission completed successfully');
+      }
+
       onSuccess?.();
       onClose();
     } catch (err) {
-      showError(err instanceof Error ? err.message : 'Admission could not be completed');
+      showError(err instanceof Error ? err.message : 'Failed to save admission');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="Full Name *" value={form.fullName} onChange={e => setForm(prev => ({ ...prev, fullName: e.target.value }))} />
-            <Input label="Date of Birth *" type="date" value={form.dateOfBirth} onChange={e => setForm(prev => ({ ...prev, dateOfBirth: e.target.value }))} />
-            <Select label="Gender *" options={GENDER_OPTIONS} placeholder="Select gender" value={form.gender} onChange={e => setForm(prev => ({ ...prev, gender: e.target.value }))} />
-            <Select label="Blood Group" options={BLOOD_GROUPS.map(b => ({ value: b, label: b }))} placeholder="Select" value={form.bloodGroup} onChange={e => setForm(prev => ({ ...prev, bloodGroup: e.target.value }))} />
+  const selectedClass = classes.find((c) => c.id === form.classId);
+  const sectionOptions =
+    selectedClass?.sections.map((s) => ({ value: s.id, label: s.name })) || [];
+  const aadhaarDigitsOnly = form.aadhaarNumber.replace(/\D/g, '');
 
-            {/* Aadhaar with 12-digit formatting */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Aadhaar Number <span className="text-gray-400 font-normal">(12 digits)</span>
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={14} // 12 digits + 2 spaces
-                placeholder="XXXX XXXX XXXX"
-                value={form.aadhaarNumber}
-                onChange={e => {
-                  const formatted = formatAadhaar(e.target.value);
-                  setForm(prev => ({ ...prev, aadhaarNumber: formatted }));
-                }}
-                className={`input w-full font-mono tracking-widest ${aadhaarDigitsOnly.length > 0 && aadhaarDigitsOnly.length !== 12 ? 'border-red-400 focus:ring-red-400' : ''}`}
-              />
-              {aadhaarDigitsOnly.length > 0 && aadhaarDigitsOnly.length !== 12 && (
-                <p className="text-xs text-red-500 mt-1">Aadhaar must be exactly 12 digits ({aadhaarDigitsOnly.length}/12)</p>
-              )}
-              {aadhaarDigitsOnly.length === 12 && (
-                <p className="text-xs text-green-600 mt-1">✓ Valid Aadhaar number</p>
-              )}
-            </div>
+  return (
+    <div className="max-h-[82vh] overflow-y-auto px-1 py-1">
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* ── 1. Personal Information ─────────────────────────────────────── */}
+        <div className="card p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
+            Personal Information
+          </h3>
 
-            <Input label="Previous School" value={form.previousSchool} onChange={e => setForm(prev => ({ ...prev, previousSchool: e.target.value }))} />
-
-            {/* Photo upload */}
-            <div className="md:col-span-2 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-800/30">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {selectedPhoto ? (
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-primary-500 shadow-sm flex-shrink-0 bg-white">
-                      <img src={selectedPhoto} alt="Student Preview" className="w-full h-full object-cover" />
+          <div className="flex flex-col md:flex-row gap-6">
+            {/* Student Photo */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-28 h-28 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-800 relative group shadow-sm">
+                {form.photoPath ? (
+                  <>
+                    <img
+                      src={form.photoPath}
+                      alt="Student"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="p-1.5 bg-white rounded-full text-gray-700 hover:bg-gray-100"
+                        title="Change photo"
+                      >
+                        <Upload className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, photoPath: '' }))}
+                        className="p-1.5 bg-white rounded-full text-red-600 hover:bg-red-50"
+                        title="Remove photo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                  ) : null}
-                  <div>
-                    <p className="font-medium text-sm">Student Photo</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Upload a passport-sized photo for the student profile.</p>
-                    {selectedPhoto ? (
-                      <p className="text-xs text-green-600 font-medium mt-1">✓ Photo ready</p>
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-1">No photo selected yet.</p>
-                    )}
+                  </>
+                ) : (
+                  <div
+                    onClick={() => photoInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center cursor-pointer p-3 text-center"
+                  >
+                    <User className="w-8 h-8 text-gray-400 mb-1" />
+                    <span className="text-[10px] text-gray-500 font-medium leading-tight">
+                      Click to upload photo
+                    </span>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  {selectedPhoto
-                    ? <Button type="button" variant="secondary" onClick={removePhoto}><Trash2 className="w-4 h-4" /> Remove</Button>
-                    : <Button type="button" variant="secondary" onClick={() => photoInputRef.current?.click()}><Upload className="w-4 h-4" /> Choose Photo</Button>}
-                </div>
+                )}
               </div>
+              <p className="text-[10px] text-gray-400">Max size 2MB (JPG/PNG)</p>
             </div>
-          </div>
-        );
 
-      case 2:
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-              ℹ️ Provide at least one complete parent or guardian contact (name + mobile), and fill the address fields.
-            </div>
-            {stepErrors._step && <p className="md:col-span-2 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">{stepErrors._step}</p>}
-
-            {/* Father */}
-            <div className="md:col-span-2"><p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Father's Details</p></div>
-            <Input label="Father's Name" value={form.fatherName} error={stepErrors.fatherName} onChange={e => { setForm(prev => ({ ...prev, fatherName: e.target.value })); setStepErrors(prev => ({ ...prev, fatherName: undefined, _step: undefined })); }} />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Father's Mobile</label>
-              <input
-                type="text" inputMode="numeric" maxLength={10}
-                placeholder="10-digit mobile number"
-                value={form.fatherMobile}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setForm(prev => ({ ...prev, fatherMobile: v })); setStepErrors(prev => ({ ...prev, fatherMobile: undefined, _step: undefined })); }}
-                className={`input w-full ${stepErrors.fatherMobile ? 'border-red-400' : ''}`}
-              />
-              {stepErrors.fatherMobile && <p className="text-xs text-red-500 mt-1">{stepErrors.fatherMobile}</p>}
-              {form.fatherMobile.length > 0 && form.fatherMobile.length < 10 && <p className="text-xs text-orange-500 mt-1">{form.fatherMobile.length}/10 digits</p>}
-            </div>
-            <Input label="Father's Occupation" value={form.fatherOccupation} onChange={e => setForm(prev => ({ ...prev, fatherOccupation: e.target.value }))} />
-            <Input label="Father's Email" type="email" value={form.fatherEmail} onChange={e => setForm(prev => ({ ...prev, fatherEmail: e.target.value }))} />
-
-            {/* Mother */}
-            <div className="md:col-span-2"><p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-2">Mother's Details</p></div>
-            <Input label="Mother's Name" value={form.motherName} error={stepErrors.motherName} onChange={e => { setForm(prev => ({ ...prev, motherName: e.target.value })); setStepErrors(prev => ({ ...prev, motherName: undefined, _step: undefined })); }} />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mother's Mobile</label>
-              <input
-                type="text" inputMode="numeric" maxLength={10}
-                placeholder="10-digit mobile number"
-                value={form.motherMobile}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setForm(prev => ({ ...prev, motherMobile: v })); setStepErrors(prev => ({ ...prev, motherMobile: undefined, _step: undefined })); }}
-                className={`input w-full ${stepErrors.motherMobile ? 'border-red-400' : ''}`}
-              />
-              {stepErrors.motherMobile && <p className="text-xs text-red-500 mt-1">{stepErrors.motherMobile}</p>}
-              {form.motherMobile.length > 0 && form.motherMobile.length < 10 && <p className="text-xs text-orange-500 mt-1">{form.motherMobile.length}/10 digits</p>}
-            </div>
-            <Input label="Mother's Occupation" value={form.motherOccupation} onChange={e => setForm(prev => ({ ...prev, motherOccupation: e.target.value }))} />
-            <Input label="Mother's Email" type="email" value={form.motherEmail} onChange={e => setForm(prev => ({ ...prev, motherEmail: e.target.value }))} />
-
-            {/* Guardian */}
-            <div className="md:col-span-2"><p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-2">Guardian Details <span className="font-normal text-gray-400">(if applicable)</span></p></div>
-            <Input label="Guardian Name" value={form.guardianName} error={stepErrors.guardianName} onChange={e => { setForm(prev => ({ ...prev, guardianName: e.target.value })); setStepErrors(prev => ({ ...prev, guardianName: undefined, guardianRelation: undefined, _step: undefined })); }} />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Guardian Mobile</label>
-              <input
-                type="text" inputMode="numeric" maxLength={10}
-                placeholder="10-digit mobile number"
-                value={form.guardianMobile}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setForm(prev => ({ ...prev, guardianMobile: v })); setStepErrors(prev => ({ ...prev, guardianMobile: undefined, _step: undefined })); }}
-                className={`input w-full ${stepErrors.guardianMobile ? 'border-red-400' : ''}`}
-              />
-              {stepErrors.guardianMobile && <p className="text-xs text-red-500 mt-1">{stepErrors.guardianMobile}</p>}
-              {form.guardianMobile.length > 0 && form.guardianMobile.length < 10 && <p className="text-xs text-orange-500 mt-1">{form.guardianMobile.length}/10 digits</p>}
-            </div>
-            <Input label="Guardian Email" type="email" value={form.guardianEmail} onChange={e => setForm(prev => ({ ...prev, guardianEmail: e.target.value }))} />
-            <Input label="Relationship with Student" value={form.guardianRelation} error={stepErrors.guardianRelation} onChange={e => { setForm(prev => ({ ...prev, guardianRelation: e.target.value })); setStepErrors(prev => ({ ...prev, guardianRelation: undefined })); }} />
-
-            {/* Address */}
-            <div className="md:col-span-2"><p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-2">Address</p></div>
-            <Input label="Address *" className="md:col-span-2" value={form.address} error={stepErrors.address} onChange={e => { setForm(prev => ({ ...prev, address: e.target.value })); setStepErrors(prev => ({ ...prev, address: undefined })); }} />
-            <Input label="City *" value={form.city} error={stepErrors.city} onChange={e => { setForm(prev => ({ ...prev, city: e.target.value })); setStepErrors(prev => ({ ...prev, city: undefined })); }} />
-            <Input label="State *" value={form.state} error={stepErrors.state} onChange={e => { setForm(prev => ({ ...prev, state: e.target.value })); setStepErrors(prev => ({ ...prev, state: undefined })); }} />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PIN Code *</label>
-              <input
-                type="text" inputMode="numeric" maxLength={6}
-                placeholder="6-digit PIN code"
-                value={form.pincode}
-                onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setForm(prev => ({ ...prev, pincode: v })); setStepErrors(prev => ({ ...prev, pincode: undefined })); }}
-                className={`input w-full font-mono ${stepErrors.pincode ? 'border-red-400' : ''}`}
-              />
-              {stepErrors.pincode && <p className="text-xs text-red-500 mt-1">{stepErrors.pincode}</p>}
-              {form.pincode.length > 0 && form.pincode.length < 6 && <p className="text-xs text-orange-500 mt-1">{form.pincode.length}/6 digits</p>}
-              {form.pincode.length === 6 && <p className="text-xs text-green-600 mt-1">✓ Valid PIN code</p>}
-            </div>
-          </div>
-        );
-
-      case 3:
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Academic Year *</label>
-                <button type="button" onClick={() => setShowAddYearModal(true)} className="text-xs text-primary-600 hover:text-primary-700 font-medium underline">
-                  + Add New Year
-                </button>
+            {/* Core Details */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <Input
+                  label="Full Name *"
+                  required
+                  placeholder="Enter student's full name"
+                  value={form.name}
+                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                />
               </div>
+
+              <Input
+                label="Date of Birth"
+                type="date"
+                value={form.dateOfBirth}
+                onChange={(e) => setForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+              />
+
               <Select
-                options={academicYears.map(y => ({ value: y.id, label: y.isCurrent ? `${y.name} (Current)` : y.name }))}
-                placeholder={academicYears.length === 0 ? "No years found — Click '+ Add New Year'" : "Select academic year"}
-                value={form.academicYearId}
-                onChange={e => setForm(prev => ({ ...prev, academicYearId: e.target.value }))}
+                label="Gender *"
+                options={GENDER_OPTIONS}
+                value={form.gender}
+                onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value }))}
+              />
+
+              <Select
+                label="Blood Group"
+                options={BLOOD_GROUPS.map((b) => ({ value: b, label: b }))}
+                placeholder="Select blood group"
+                value={form.bloodGroup}
+                onChange={(e) => setForm((prev) => ({ ...prev, bloodGroup: e.target.value }))}
+              />
+
+              {/* Aadhaar Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Aadhaar Number <span className="text-gray-400 font-normal">(12 digits)</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={14}
+                  placeholder="XXXX XXXX XXXX"
+                  value={form.aadhaarNumber}
+                  onChange={(e) => {
+                    const formatted = formatAadhaar(e.target.value);
+                    setForm((prev) => ({ ...prev, aadhaarNumber: formatted }));
+                  }}
+                  className={`input w-full font-mono tracking-widest ${
+                    aadhaarDigitsOnly.length > 0 && aadhaarDigitsOnly.length !== 12
+                      ? 'border-red-400 focus:ring-red-400'
+                      : ''
+                  }`}
+                />
+                {aadhaarDigitsOnly.length > 0 && aadhaarDigitsOnly.length !== 12 && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Aadhaar must be exactly 12 digits ({aadhaarDigitsOnly.length}/12)
+                  </p>
+                )}
+                {aadhaarDigitsOnly.length === 12 && (
+                  <p className="text-xs text-green-600 mt-1">✓ Valid Aadhaar number</p>
+                )}
+              </div>
+
+              <Input
+                label="Previous School"
+                value={form.previousSchool}
+                onChange={(e) => setForm((prev) => ({ ...prev, previousSchool: e.target.value }))}
               />
             </div>
+          </div>
+        </div>
+
+        {/* ── 2. Academic & Class Information ─────────────────────────────── */}
+        <div className="card p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
+            Academic & Class Information
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Select
-              label="Class *"
-              options={classes.map(c => ({ value: c.id, label: `Class ${c.name}` }))}
+              label="Academic Year"
+              options={academicYears.map((y) => ({
+                value: y.id,
+                label: y.isCurrent ? `${y.name} (Current)` : y.name,
+              }))}
+              placeholder="Select academic year"
+              value={form.academicYearId}
+              onChange={(e) => setForm((prev) => ({ ...prev, academicYearId: e.target.value }))}
+            />
+            <Select
+              label="Class"
+              options={classes.map((c) => ({
+                value: c.id,
+                label: `Class ${c.name}`,
+              }))}
               placeholder="Select class"
               value={form.classId}
-              onChange={e => setForm(prev => ({ ...prev, classId: e.target.value, sectionId: '' }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, classId: e.target.value, sectionId: '' }))
+              }
             />
-
-            {/* Section — shows hint when no class selected */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Section</label>
-              {!form.classId ? (
-                <div className="input text-gray-400 text-sm flex items-center bg-gray-50 dark:bg-gray-800 cursor-not-allowed select-none">
-                  ← Select a class first
-                </div>
-              ) : (selectedClass?.sections || []).length === 0 ? (
-                <div className="input text-gray-400 text-sm flex items-center bg-gray-50 dark:bg-gray-800">
-                  No sections in this class
-                </div>
-              ) : (
-                <Select
-                  options={(selectedClass?.sections || []).map(s => ({ value: s.id, label: s.name }))}
-                  placeholder="Select section"
-                  value={form.sectionId}
-                  onChange={e => setForm(prev => ({ ...prev, sectionId: e.target.value }))}
-                />
-              )}
-            </div>
-
-            <Input label="Roll Number" value={form.rollNumber} onChange={e => setForm(prev => ({ ...prev, rollNumber: e.target.value }))} />
-            <Input label="Admission Date *" type="date" value={form.admissionDate} onChange={e => setForm(prev => ({ ...prev, admissionDate: e.target.value }))} />
-            <Input label="Previous Class" value={form.previousClass} onChange={e => setForm(prev => ({ ...prev, previousClass: e.target.value }))} />
-            <Input label="TC Number" value={form.tcNumber} onChange={e => setForm(prev => ({ ...prev, tcNumber: e.target.value }))} />
             <Select
-              label="Admission Status"
+              label="Section"
+              options={sectionOptions}
+              placeholder={
+                !form.classId
+                  ? '← Select class first'
+                  : sectionOptions.length === 0
+                  ? 'No sections'
+                  : 'Select section'
+              }
+              value={form.sectionId}
+              onChange={(e) => setForm((prev) => ({ ...prev, sectionId: e.target.value }))}
+            />
+            <Input
+              label="Roll Number"
+              value={form.rollNumber}
+              onChange={(e) => setForm((prev) => ({ ...prev, rollNumber: e.target.value }))}
+            />
+            <Input
+              label="Admission Date"
+              type="date"
+              value={form.admissionDate}
+              onChange={(e) => setForm((prev) => ({ ...prev, admissionDate: e.target.value }))}
+            />
+            <Select
+              label="Student Status"
               options={[
-                { value: 'PENDING', label: 'Pending' },
-                { value: 'APPROVED', label: 'Approved' },
-                { value: 'REJECTED', label: 'Rejected' },
-                { value: 'ENROLLED', label: 'Enrolled' },
+                { value: 'ACTIVE', label: 'Active' },
+                { value: 'INACTIVE', label: 'Inactive' },
+                { value: 'TRANSFERRED', label: 'Transferred' },
+                { value: 'GRADUATED', label: 'Graduated' },
               ]}
-              placeholder="Select status"
-              value={form.admissionStatus}
-              onChange={e => setForm(prev => ({ ...prev, admissionStatus: e.target.value }))}
+              value={form.status}
+              onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
             />
           </div>
-        );
+        </div>
 
-      case 4:
-        return (
-          <div className="space-y-5">
+        {/* ── 3. Parent / Guardian Details ─────────────────────────────────── */}
+        <div className="card p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
+            Parent & Guardian Details
+          </h3>
+
+          <div className="space-y-6">
+            {/* Father */}
             <div>
-              <p className="font-semibold text-gray-900 dark:text-white">Upload Documents</p>
-              <p className="text-sm text-gray-500 mt-0.5">Upload documents for the student and parents/guardian. Select the document type and then choose the file.</p>
-            </div>
-
-            {/* Document type groups */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Student documents */}
-              <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                    <FileText className="w-3.5 h-3.5 text-blue-600" />
-                  </div>
-                  <p className="font-medium text-sm text-blue-700 dark:text-blue-400">Student Documents</p>
+              <p className="text-xs font-semibold text-primary-600 uppercase tracking-wider mb-3">
+                Father's Information
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Input
+                  label="Father's Name"
+                  value={form.fatherName}
+                  onChange={(e) => setForm((prev) => ({ ...prev, fatherName: e.target.value }))}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Father's Mobile
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit number"
+                    value={form.fatherMobile}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setForm((prev) => ({ ...prev, fatherMobile: v }));
+                    }}
+                    className="input w-full"
+                  />
+                  {form.fatherMobile.length > 0 && form.fatherMobile.length < 10 && (
+                    <p className="text-xs text-orange-500 mt-1">
+                      {form.fatherMobile.length}/10 digits
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  {STUDENT_DOC_TYPES.map(docType => {
-                    const uploaded = documents.find(d => d.type === docType.value);
-                    return (
-                      <div key={docType.value} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{docType.label}</span>
-                        {uploaded ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-green-600 max-w-[120px] truncate">{uploaded.name}</span>
-                            <button onClick={() => removeDocument(uploaded.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => triggerUploadDoc(docType.value)}
-                            className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
-                          >
-                            <Upload className="w-3 h-3" /> Upload
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Parent documents */}
-              <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                    <FileText className="w-3.5 h-3.5 text-purple-600" />
-                  </div>
-                  <p className="font-medium text-sm text-purple-700 dark:text-purple-400">Parent / Guardian Documents</p>
-                </div>
-                <div className="space-y-2">
-                  {PARENT_DOC_TYPES.map(docType => {
-                    const uploaded = documents.find(d => d.type === docType.value);
-                    return (
-                      <div key={docType.value} className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{docType.label}</span>
-                        {uploaded ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-green-600 max-w-[120px] truncate">{uploaded.name}</span>
-                            <button onClick={() => removeDocument(uploaded.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => triggerUploadDoc(docType.value)}
-                            className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
-                          >
-                            <Upload className="w-3 h-3" /> Upload
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <Input
+                  label="Father's Occupation"
+                  value={form.fatherOccupation}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, fatherOccupation: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Father's Email"
+                  type="email"
+                  value={form.fatherEmail}
+                  onChange={(e) => setForm((prev) => ({ ...prev, fatherEmail: e.target.value }))}
+                />
               </div>
             </div>
 
-            {/* Other / extra documents */}
-            <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Other Documents</p>
-                <button
-                  type="button"
-                  onClick={() => triggerUploadDoc('OTHER')}
-                  className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  <Upload className="w-3.5 h-3.5" /> Add Other Document
-                </button>
-              </div>
-              {documents.filter(d => d.type === 'OTHER').length > 0 ? (
-                <div className="space-y-1">
-                  {documents.filter(d => d.type === 'OTHER').map(doc => (
-                    <div key={doc.id} className="flex items-center justify-between py-1.5">
-                      <span className="text-sm text-gray-600">{doc.name}</span>
-                      <button onClick={() => removeDocument(doc.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))}
+            {/* Mother */}
+            <div>
+              <p className="text-xs font-semibold text-primary-600 uppercase tracking-wider mb-3">
+                Mother's Information
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Input
+                  label="Mother's Name"
+                  value={form.motherName}
+                  onChange={(e) => setForm((prev) => ({ ...prev, motherName: e.target.value }))}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Mother's Mobile
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit number"
+                    value={form.motherMobile}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setForm((prev) => ({ ...prev, motherMobile: v }));
+                    }}
+                    className="input w-full"
+                  />
+                  {form.motherMobile.length > 0 && form.motherMobile.length < 10 && (
+                    <p className="text-xs text-orange-500 mt-1">
+                      {form.motherMobile.length}/10 digits
+                    </p>
+                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-gray-400">No other documents added yet.</p>
-              )}
+                <Input
+                  label="Mother's Occupation"
+                  value={form.motherOccupation}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, motherOccupation: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Mother's Email"
+                  type="email"
+                  value={form.motherEmail}
+                  onChange={(e) => setForm((prev) => ({ ...prev, motherEmail: e.target.value }))}
+                />
+              </div>
             </div>
 
-            {/* Summary */}
+            {/* Guardian */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Guardian's Information (If Applicable)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Input
+                  label="Guardian's Name"
+                  value={form.guardianName}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, guardianName: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Guardian's Mobile"
+                  value={form.guardianMobile}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, guardianMobile: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Relation with Student"
+                  placeholder="e.g. Uncle, Grandfather"
+                  value={form.guardianRelation}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, guardianRelation: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Guardian's Email"
+                  type="email"
+                  value={form.guardianEmail}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, guardianEmail: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 4. Contact & Address Details ─────────────────────────────────── */}
+        <div className="card p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
+            Contact & Address Details
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-4">
+              <Input
+                label="Full Residential Address"
+                placeholder="Street name, landmark, house/flat number"
+                value={form.address}
+                onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
+              />
+            </div>
+            <Input
+              label="City"
+              value={form.city}
+              onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))}
+            />
+            <Input
+              label="State"
+              value={form.state}
+              onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
+            />
+            <Input
+              label="PIN Code"
+              maxLength={6}
+              value={form.pincode}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setForm((prev) => ({ ...prev, pincode: v }));
+              }}
+            />
+          </div>
+        </div>
+
+        {/* ── 5. Student Documents & Attachments ───────────────────────────── */}
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                Student & Parent Documents
+              </h3>
+              <p className="text-xs text-gray-500">
+                Attach document copies (PDF, JPG, PNG, DOC - Max 5MB each)
+              </p>
+            </div>
             {documents.length > 0 && (
-              <div className="rounded-lg bg-green-50 dark:bg-green-900/20 px-4 py-2 text-sm text-green-700 dark:text-green-400">
-                ✓ {documents.length} document{documents.length !== 1 ? 's' : ''} attached
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                {documents.length} Attached
+              </span>
+            )}
+          </div>
+
+          {/* Attached Documents List */}
+          {documents.length > 0 && (
+            <div className="mb-6 space-y-2">
+              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                Attached Files
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60"
+                  >
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <FileText className="w-5 h-5 text-primary-600 flex-shrink-0" />
+                      <div className="overflow-hidden">
+                        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
+                          {doc.docLabel || doc.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400 truncate">{doc.name}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDoc(doc)}
+                        className="p-1 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                        title="Preview document"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeDoc(doc.id)}
+                        className="p-1 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="Delete document"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Document Upload Sections */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Student Documents */}
+            <div className="rounded-xl border border-primary-100 dark:border-primary-900/40 bg-primary-50/30 dark:bg-primary-900/10 p-4">
+              <p className="text-xs font-semibold text-primary-700 dark:text-primary-400 uppercase tracking-wider mb-2">
+                + Add Student Document
+              </p>
+              <div className="space-y-1.5">
+                {STUDENT_DOC_TYPES.map((t) => {
+                  const alreadyUploaded = documents.some((d) => d.type === t.value);
+                  return (
+                    <div
+                      key={t.value}
+                      className="flex items-center justify-between py-1.5 border-b border-primary-100/50 dark:border-primary-900/20 last:border-0"
+                    >
+                      <span className="text-xs text-gray-700 dark:text-gray-300">
+                        {t.label}
+                      </span>
+                      {alreadyUploaded ? (
+                        <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Attached
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => triggerDocUpload(t.value)}
+                          className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                        >
+                          <Upload className="w-3 h-3" /> Upload
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Parent Documents */}
+            <div className="rounded-xl border border-purple-100 dark:border-purple-900/40 bg-purple-50/30 dark:bg-purple-900/10 p-4">
+              <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wider mb-2">
+                + Add Parent Document
+              </p>
+              <div className="space-y-1.5">
+                {PARENT_DOC_TYPES.map((t) => {
+                  const alreadyUploaded = documents.some((d) => d.type === t.value);
+                  return (
+                    <div
+                      key={t.value}
+                      className="flex items-center justify-between py-1.5 border-b border-purple-100/50 dark:border-purple-900/20 last:border-0"
+                    >
+                      <span className="text-xs text-gray-700 dark:text-gray-300">
+                        {t.label}
+                      </span>
+                      {alreadyUploaded ? (
+                        <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Attached
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => triggerDocUpload(t.value)}
+                          className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-medium"
+                        >
+                          <Upload className="w-3 h-3" /> Upload
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Other Document */}
+          <div className="mt-4 flex items-center justify-between p-3 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              Other Custom Document (Certificate, Medical Report, etc.)
+            </span>
+            <button
+              type="button"
+              onClick={() => triggerDocUpload('OTHER')}
+              className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+            >
+              <Plus className="w-3.5 h-3.5" /> Upload Other
+            </button>
+          </div>
+
+          {/* Other Document Name Modal */}
+          {showOtherNameModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 border border-gray-200 dark:border-gray-700">
+                <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary-600" /> Document Name
+                </h4>
+                <p className="text-xs text-gray-500 mb-4">
+                  Enter a name for this custom document (e.g. Migration Certificate)
+                </p>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="e.g. Migration Certificate"
+                  value={pendingOtherName}
+                  onChange={(e) => setPendingOtherName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmOtherDocName();
+                    if (e.key === 'Escape') setShowOtherNameModal(false);
+                  }}
+                  className="input w-full mb-4"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowOtherNameModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmOtherDocName}
+                    disabled={!pendingOtherName.trim()}
+                    className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Continue & Choose File
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── 6. Admission Fee & Payment (Last Section) ────────────────────── */}
+        <div className="card p-6 border-2 border-emerald-100 dark:border-emerald-950/40 bg-gradient-to-br from-emerald-50/20 via-transparent to-transparent">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+              <Wallet className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                Admission Fee & Payment
+              </h3>
+              <p className="text-xs text-gray-500">
+                Collect fee or record initial payment during admission (leave blank if no payment received now)
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-3 border-t border-emerald-100 dark:border-emerald-950/40">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <Select
+                label="Fee Category"
+                options={feeCategories.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="Select category (e.g. Admission Fee)"
+                value={feeForm.feeCategoryId}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, feeCategoryId: e.target.value }))
+                }
+              />
+              <Input
+                label="Total Applicable Fee (₹)"
+                type="number"
+                min="0"
+                placeholder="e.g. 5000"
+                value={feeForm.totalAmount}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, totalAmount: e.target.value }))
+                }
+              />
+              <Input
+                label="Amount Paid Now (₹)"
+                type="number"
+                min="0"
+                placeholder="e.g. 5000"
+                value={feeForm.paidAmount}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, paidAmount: e.target.value }))
+                }
+              />
+              <Select
+                label="Payment Method"
+                options={PAYMENT_METHODS}
+                value={feeForm.paymentMethod}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, paymentMethod: e.target.value }))
+                }
+              />
+              <Input
+                label="Payment Date"
+                type="date"
+                value={feeForm.paymentDate}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, paymentDate: e.target.value }))
+                }
+              />
+              <Input
+                label="Payment Note / Receipt Remarks"
+                placeholder="e.g. Admission fee receipt"
+                value={feeForm.remarks}
+                onChange={(e) =>
+                  setFeeForm((prev) => ({ ...prev, remarks: e.target.value }))
+                }
+              />
+            </div>
+
+            {/* Live fee summary badge */}
+            {(Number(feeForm.paidAmount || 0) > 0 || Number(feeForm.totalAmount || 0) > 0) && (
+              <div className="rounded-xl bg-white dark:bg-gray-800/80 p-4 border border-emerald-200/70 dark:border-emerald-900/50 flex flex-wrap items-center justify-between gap-4 text-sm shadow-sm">
+                <div>
+                  <span className="text-xs text-gray-500 block">Total Fee:</span>
+                  <strong className="text-base text-gray-900 dark:text-white">
+                    ₹{Number(feeForm.totalAmount || feeForm.paidAmount || 0).toLocaleString()}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Paid Now:</span>
+                  <strong className="text-base text-emerald-600 dark:text-emerald-400">
+                    ₹{Number(feeForm.paidAmount || 0).toLocaleString()}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block">Remaining Due:</span>
+                  <strong
+                    className={`text-base ${
+                      Number(feeForm.totalAmount || 0) - Number(feeForm.paidAmount || 0) > 0
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-gray-900 dark:text-white'
+                    }`}
+                  >
+                    ₹{Math.max(
+                      0,
+                      Number(feeForm.totalAmount || 0) - Number(feeForm.paidAmount || 0)
+                    ).toLocaleString()}
+                  </strong>
+                </div>
               </div>
             )}
           </div>
-        );
-
-      case 5:
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select label="Fee Category" options={feeCategories.map(c => ({ value: c.id, label: c.name }))} placeholder="Select fee category" value={form.feeCategoryId} onChange={e => setForm(prev => ({ ...prev, feeCategoryId: e.target.value }))} />
-            <Input label="Fee Amount (₹)" type="number" min="0" value={form.feeAmount} onChange={e => setForm(prev => ({ ...prev, feeAmount: e.target.value }))} />
-            <Input label="Discount (₹)" type="number" min="0" value={form.discount} onChange={e => setForm(prev => ({ ...prev, discount: e.target.value }))} />
-            <Input label="Initial Payment (₹)" type="number" min="0" value={form.paidAmount} onChange={e => setForm(prev => ({ ...prev, paidAmount: e.target.value }))} />
-            <Select label="Payment Method" options={PAYMENT_METHODS} placeholder="Select method" value={form.paymentMethod} onChange={e => setForm(prev => ({ ...prev, paymentMethod: e.target.value }))} />
-            <Input label="Payment Reference / Receipt No" value={form.paymentReference} onChange={e => setForm(prev => ({ ...prev, paymentReference: e.target.value }))} />
-            <div className="md:col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800/50">
-              <p className="font-semibold text-sm mb-2">Fee Summary</p>
-              <div className="grid grid-cols-2 gap-1 text-sm text-gray-600 dark:text-gray-400">
-                <span>Subtotal:</span><span className="text-right">₹{Number(form.feeAmount || 0).toFixed(2)}</span>
-                <span>Discount:</span><span className="text-right text-green-600">- ₹{Number(form.discount || 0).toFixed(2)}</span>
-                <span className="font-medium text-gray-800 dark:text-white">Total Payable:</span><span className="text-right font-medium text-gray-800 dark:text-white">₹{feeTotal.toFixed(2)}</span>
-                <span>Initial Payment:</span><span className="text-right text-blue-600">₹{Number(form.paidAmount || 0).toFixed(2)}</span>
-                <span className="font-medium">Balance Due:</span><span className={`text-right font-medium ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>₹{balance.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 6:
-        return (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-              <p className="font-semibold text-lg mb-4">Review & Confirm</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Student</p>
-                  <p><span className="text-gray-500">Name:</span> {form.fullName || '-'}</p>
-                  <p><span className="text-gray-500">DOB:</span> {form.dateOfBirth || '-'}</p>
-                  <p><span className="text-gray-500">Gender:</span> {form.gender || '-'}</p>
-                  {aadhaarDigitsOnly && <p><span className="text-gray-500">Aadhaar:</span> {form.aadhaarNumber}</p>}
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Academic</p>
-                  <p><span className="text-gray-500">Class:</span> {form.classId ? `Class ${classes.find(c => c.id === form.classId)?.name || ''}` : '-'}</p>
-                  <p><span className="text-gray-500">Section:</span> {form.sectionId ? (selectedClass?.sections.find(s => s.id === form.sectionId)?.name || '-') : '-'}</p>
-                  <p><span className="text-gray-500">Admission No:</span> Auto-generated</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Fees</p>
-                  <p><span className="text-gray-500">Total Payable:</span> ₹{feeTotal.toFixed(2)}</p>
-                  <p><span className="text-gray-500">Paid:</span> ₹{Number(form.paidAmount || 0).toFixed(2)}</p>
-                  <p><span className="text-gray-500">Balance:</span> ₹{balance.toFixed(2)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-2">Documents</p>
-                  <p>{documents.length} document{documents.length !== 1 ? 's' : ''} attached</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 p-4 text-sm text-green-700 dark:text-green-400">
-              <div className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /><span>The admission will be saved securely. Admission number will be generated automatically.</span></div>
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  if (loading && !classes.length && !feeCategories.length) return <LoadingSpinner message="Preparing admission wizard..." />;
-
-  return (
-    <div className="space-y-6">
-      <PageHeader title="New Admission" subtitle="Create a student admission with documents, fee setup, and review" />
-      <div className="card p-5">
-        <div className="flex flex-wrap gap-2 mb-6">
-          {STEPS.map(item => (
-            <div key={item.id} className={`flex items-center gap-2 rounded-full px-3 py-2 text-sm transition-colors ${step === item.id ? 'bg-primary-600 text-white' : step > item.id ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
-              {step > item.id ? <CheckCircle2 className="w-3.5 h-3.5" /> : <span className="w-4 h-4 text-xs font-bold flex items-center justify-center">{item.id}</span>}
-              <span className="font-medium">{item.title}</span>
-            </div>
-          ))}
         </div>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">{renderStep()}</div>
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-gray-500">{draftSaved && <><CircleAlert className="w-4 h-4" /> Draft saved</>}</div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" type="button" onClick={onClose}><X className="w-4 h-4" /> Cancel</Button>
-            <Button variant="secondary" type="button" onClick={saveDraft} loading={loading}><Save className="w-4 h-4" /> Save Draft</Button>
-            {step > 1 && <Button variant="secondary" type="button" onClick={goPrev}><ArrowLeft className="w-4 h-4" /> Previous</Button>}
-            {step < 6
-              ? <Button type="button" onClick={goNext}><ArrowRight className="w-4 h-4" /> Next</Button>
-              : <Button type="button" onClick={handleConfirm} loading={loading}><CheckCircle2 className="w-4 h-4" /> Confirm Admission</Button>}
-          </div>
-        </div>
-      </div>
 
-      <Modal isOpen={showAddYearModal} onClose={() => setShowAddYearModal(false)} title="Add Academic Year" size="md">
-        <div className="space-y-4">
-          <Input label="Academic Year Name *" placeholder="e.g. 2026-27" value={newYearForm.name} onChange={e => setNewYearForm(prev => ({ ...prev, name: e.target.value }))} />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Start Date *" type="date" value={newYearForm.startDate} onChange={e => setNewYearForm(prev => ({ ...prev, startDate: e.target.value }))} />
-            <Input label="End Date *" type="date" value={newYearForm.endDate} onChange={e => setNewYearForm(prev => ({ ...prev, endDate: e.target.value }))} />
-          </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer pt-1">
-            <input type="checkbox" checked={newYearForm.isCurrent} onChange={e => setNewYearForm(prev => ({ ...prev, isCurrent: e.target.checked }))} className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-            <span>Set as Active / Current Academic Year</span>
-          </label>
-          <div className="flex justify-end gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <Button variant="secondary" type="button" onClick={() => setShowAddYearModal(false)}>Cancel</Button>
-            <Button type="button" onClick={handleCreateAcademicYear} loading={savingYear}>Save & Select</Button>
-          </div>
+        {/* ── Action Buttons ─────────────────────────────────────────────── */}
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <Button variant="secondary" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={loading} className="px-6">
+            <Save className="w-4 h-4 mr-2" />
+            Complete Admission
+          </Button>
         </div>
-      </Modal>
-      {/* Hidden file inputs for photo and document uploads */}
+      </form>
+
+      {/* Hidden File Inputs */}
       <input
         ref={photoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={handlePhotoFileChange}
+        onChange={handlePhotoChange}
       />
       <input
         ref={docInputRef}
         type="file"
         accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
         className="hidden"
-        onChange={handleDocFileChange}
+        onChange={handleDocChange}
       />
+
+      {/* In-App Document Viewer Modal */}
+      <Modal
+        isOpen={!!previewDoc}
+        onClose={() => setPreviewDoc(null)}
+        title={previewDoc?.name || 'Document Preview'}
+        size="xl"
+      >
+        {previewDoc && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-gray-500 pb-2 border-b border-gray-100 dark:border-gray-800">
+              <span>
+                Document Type:{' '}
+                <strong className="text-gray-700 dark:text-gray-300 font-semibold">
+                  {previewDoc.docLabel || previewDoc.type}
+                </strong>
+              </span>
+              {previewDoc.filePath && (
+                <a
+                  href={previewDoc.filePath}
+                  download={previewDoc.name}
+                  className="text-primary-600 hover:underline font-medium flex items-center gap-1 text-xs"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download
+                </a>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center min-h-[350px] max-h-[75vh] bg-gray-50 dark:bg-gray-800/40 rounded-xl p-2 overflow-auto border border-gray-100 dark:border-gray-800">
+              {previewDoc.filePath &&
+              (previewDoc.filePath.startsWith('data:image/') ||
+                /\.(png|jpe?g|webp|gif|svg)$/i.test(previewDoc.name)) ? (
+                <img
+                  src={previewDoc.filePath}
+                  alt={previewDoc.name}
+                  className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-sm"
+                />
+              ) : previewDoc.filePath &&
+                (previewDoc.filePath.startsWith('data:application/pdf') ||
+                  previewDoc.filePath.startsWith('data:') ||
+                  /\.pdf$/i.test(previewDoc.name)) ? (
+                <embed
+                  src={previewDoc.filePath}
+                  type="application/pdf"
+                  className="w-full h-[70vh] rounded-lg border border-gray-200 dark:border-gray-700 bg-white"
+                />
+              ) : (
+                <div className="text-center p-8">
+                  <FileText className="w-16 h-16 text-primary-500 mx-auto mb-3" />
+                  <p className="font-semibold text-base text-gray-800 dark:text-gray-200">
+                    {previewDoc.name}
+                  </p>
+                  {previewDoc.filePath && (
+                    <a
+                      href={previewDoc.filePath}
+                      download={previewDoc.name}
+                      className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+                    >
+                      <Download className="w-4 h-4" /> Download Document
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
