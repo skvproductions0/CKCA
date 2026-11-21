@@ -176,8 +176,14 @@ export interface Student {
   emergencyContact?: string;
   previousSchool?: string;
   remarks?: string;
+  fatherMobile?: string;
+  motherMobile?: string;
+  aadhaarNumber?: string;
   status: string;
   isDemo?: boolean;
+  deletedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
   class?: { id: string; name: string };
   section?: { id: string; name: string };
   academicYear?: { id: string; name: string };
@@ -326,10 +332,14 @@ declare global {
       dashboard: { getStats: (academicYearId?: string) => Promise<ApiResponse> };
       students: {
         list: (filters?: unknown) => Promise<ApiResponse>;
+        listDeleted: (filters?: unknown) => Promise<ApiResponse>;
         get: (id: string) => Promise<ApiResponse>;
         create: (data: unknown) => Promise<ApiResponse>;
         update: (id: string, data: unknown) => Promise<ApiResponse>;
         archive: (id: string) => Promise<ApiResponse>;
+        restore: (id: string) => Promise<ApiResponse>;
+        permanentDelete: (id: string) => Promise<ApiResponse>;
+        emptyRecycleBin: () => Promise<ApiResponse<{ count: number }>>;
         getAttendance: (id: string, yearId?: string) => Promise<ApiResponse>;
       };
       classes: {
@@ -354,14 +364,21 @@ declare global {
       };
       teachers: {
         list: (filters?: unknown) => Promise<ApiResponse>;
+        listDeleted: (filters?: unknown) => Promise<ApiResponse>;
         get: (id: string) => Promise<ApiResponse>;
         create: (data: unknown) => Promise<ApiResponse>;
         update: (id: string, data: unknown) => Promise<ApiResponse>;
+        delete: (id: string) => Promise<ApiResponse>;
+        archive: (id: string) => Promise<ApiResponse>;
+        restore: (id: string) => Promise<ApiResponse>;
+        permanentDelete: (id: string) => Promise<ApiResponse>;
+        emptyRecycleBin: () => Promise<ApiResponse>;
       };
       subjects: {
         list: (classId?: string) => Promise<ApiResponse>;
         create: (data: unknown) => Promise<ApiResponse>;
         update: (id: string, data: unknown) => Promise<ApiResponse>;
+        delete: (id: string) => Promise<ApiResponse>;
       };
       exams: {
         list: (yearId?: string, classId?: string) => Promise<ApiResponse>;

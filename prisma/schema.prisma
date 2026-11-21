@@ -270,16 +270,25 @@ model Teacher {
   salaryPaise      Int       @default(0)
   photoPath        String?
   emergencyContact String?
+  bloodGroup       String?
+  aadhaarNumber    String?
+  panNumber        String?
+  city             String?
+  state            String?
+  pincode          String?
+  experience       String?
+  maritalStatus    String?
   status           String    @default("ACTIVE")
   isDemo           Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
-  school   School?   @relation(fields: [schoolId], references: [id])
-  user     User?     @relation(fields: [userId], references: [id])
-  sections Section[]
-  subjects Subject[]
+  school    School?    @relation(fields: [schoolId], references: [id])
+  user      User?      @relation(fields: [userId], references: [id])
+  sections  Section[]
+  subjects  Subject[]
+  documents Document[]
 
   @@unique([schoolId, employeeId])
   @@index([name])
@@ -624,7 +633,8 @@ model Result {
 model Document {
   id         String   @id @default(uuid())
   schoolId   String?
-  studentId  String
+  studentId  String?
+  teacherId  String?
   name       String
   type       String   @default("OTHER")
   filePath   String
@@ -632,10 +642,12 @@ model Document {
   mimeType   String?
   uploadedAt DateTime @default(now())
 
-  school  School? @relation(fields: [schoolId], references: [id])
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  school  School?  @relation(fields: [schoolId], references: [id])
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
+  @@index([teacherId])
   @@index([schoolId])
 }
 

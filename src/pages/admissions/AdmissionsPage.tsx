@@ -1,19 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, LoadingSpinner, Badge } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
-import { Modal } from '../../components/ui/Modal';
-import NewAdmissionWizard from './NewAdmissionWizard';
 import { formatDate, apiCall } from '../../utils/helpers';
 
 export default function AdmissionsPage() {
   const { academicYear } = useApp();
   const { success, error: showError } = useToast();
+  const navigate = useNavigate();
   const [admissions, setAdmissions] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
 
   useEffect(() => { loadData(); }, [academicYear?.id]);
 
@@ -43,7 +42,15 @@ export default function AdmissionsPage() {
 
   return (
     <div>
-      <PageHeader title="Admissions" subtitle="Manage admission applications" actions={<Button onClick={() => setShowAdd(true)}><Plus className="w-4 h-4" /> New Admission</Button>} />
+      <PageHeader
+        title="Admissions"
+        subtitle="Manage admission applications"
+        actions={
+          <Button onClick={() => navigate('/admissions/new')}>
+            <Plus className="w-4 h-4 mr-1.5" /> New Admission
+          </Button>
+        }
+      />
 
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
@@ -74,10 +81,6 @@ export default function AdmissionsPage() {
         </table>
         {admissions.length === 0 && <p className="p-8 text-center text-gray-500">No admissions yet</p>}
       </div>
-
-      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="New Admission" size="xl">
-        <NewAdmissionWizard onClose={() => setShowAdd(false)} onSuccess={loadData} />
-      </Modal>
     </div>
   );
 }

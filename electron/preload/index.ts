@@ -88,10 +88,14 @@ const api = {
 
   students: {
     list: (filters?: unknown) => ipcRenderer.invoke('students:list', filters),
+    listDeleted: (filters?: unknown) => ipcRenderer.invoke('students:listDeleted', filters),
     get: (id: string) => ipcRenderer.invoke('students:get', id),
     create: (data: unknown) => ipcRenderer.invoke('students:create', data),
     update: (id: string, data: unknown) => ipcRenderer.invoke('students:update', id, data),
     archive: (id: string) => ipcRenderer.invoke('students:archive', id),
+    restore: (id: string) => ipcRenderer.invoke('students:restore', id),
+    permanentDelete: (id: string) => ipcRenderer.invoke('students:permanentDelete', id),
+    emptyRecycleBin: () => ipcRenderer.invoke('students:emptyRecycleBin'),
     getAttendance: (id: string, yearId?: string) => ipcRenderer.invoke('students:attendance', id, yearId),
   },
 
@@ -123,15 +127,22 @@ const api = {
 
   teachers: {
     list: (filters?: unknown) => ipcRenderer.invoke('teachers:list', filters),
+    listDeleted: (filters?: unknown) => ipcRenderer.invoke('teachers:listDeleted', filters),
     get: (id: string) => ipcRenderer.invoke('teachers:get', id),
     create: (data: unknown) => ipcRenderer.invoke('teachers:create', data),
     update: (id: string, data: unknown) => ipcRenderer.invoke('teachers:update', id, data),
+    delete: (id: string) => ipcRenderer.invoke('teachers:delete', id),
+    archive: (id: string) => ipcRenderer.invoke('teachers:archive', id),
+    restore: (id: string) => ipcRenderer.invoke('teachers:restore', id),
+    permanentDelete: (id: string) => ipcRenderer.invoke('teachers:permanentDelete', id),
+    emptyRecycleBin: () => ipcRenderer.invoke('teachers:emptyRecycleBin'),
   },
 
   subjects: {
     list: (classId?: string) => ipcRenderer.invoke('subjects:list', classId),
     create: (data: unknown) => ipcRenderer.invoke('subjects:create', data),
     update: (id: string, data: unknown) => ipcRenderer.invoke('subjects:update', id, data),
+    delete: (id: string) => ipcRenderer.invoke('subjects:delete', id),
   },
 
   exams: {

@@ -20,12 +20,8 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       sandbox: false,
     },
-    show: false,
+    show: true,
     autoHideMenuBar: !isDev,
-  });
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

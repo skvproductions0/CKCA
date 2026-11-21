@@ -24,19 +24,18 @@ export async function getAttendanceForClass(
   const students = await db.student.findMany({
     where: {
       sectionId,
-      academicYearId,
       status: 'ACTIVE',
       deletedAt: null,
       ...(schoolId ? { schoolId } : {}),
+      ...(academicYearId ? { OR: [{ academicYearId }, { academicYearId: null }] } : {}),
     },
-    orderBy: { rollNumber: 'asc' },
+    orderBy: [{ rollNumber: 'asc' }, { name: 'asc' }],
   });
 
   const attendance = await db.attendance.findMany({
     where: {
       sectionId,
       date: dayStart,
-      academicYearId,
       ...(schoolId ? { schoolId } : {}),
     },
   });

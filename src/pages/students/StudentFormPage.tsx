@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Download,
   Plus,
+  Wallet,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -19,7 +20,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Modal } from '../../components/ui/Modal';
-import { GENDER_OPTIONS, BLOOD_GROUPS, apiCall } from '../../utils/helpers';
+import { GENDER_OPTIONS, BLOOD_GROUPS, PAYMENT_METHODS, apiCall } from '../../utils/helpers';
 
 const STUDENT_DOC_TYPES = [
   { value: 'STUDENT_AADHAAR', label: "Student's Aadhaar Card" },
@@ -133,12 +134,29 @@ export default function StudentFormPage() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [previewDoc, setPreviewDoc] = useState<DocItem | null>(null);
   const [activeDocType, setActiveDocType] = useState<string | null>(null);
+  const [otherDocName, setOtherDocName] = useState('');
+  const [showOtherNameModal, setShowOtherNameModal] = useState(false);
+  const [pendingOtherName, setPendingOtherName] = useState('');
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
+  // Fee collection state for new admission
+  const [feeCategories, setFeeCategories] = useState<{ id: string; name: string }[]>([]);
+  const [feeForm, setFeeForm] = useState({
+    feeCategoryId: '',
+    totalAmount: '',
+    paidAmount: '',
+    paymentMethod: 'CASH',
+    paymentDate: new Date().toISOString().split('T')[0],
+    remarks: 'Admission fee payment',
+  });
+
   useEffect(() => {
     loadClasses();
+    if (!isEdit) {
+      loadFeeCategories();
+    }
     if (isEdit && id) {
       loadStudent();
     } else if (academicYear?.id) {
@@ -150,6 +168,15 @@ export default function StudentFormPage() {
     try {
       const data = await apiCall(() => window.api.classes.list());
       setClasses(data as typeof classes);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadFeeCategories = async () => {
+    try {
+      const cats = await apiCall(() => window.api.fees.getCategories());
+      setFeeCategories((cats as { id: string; name: string }[]) || []);
     } catch {
       // ignore
     }
@@ -246,8 +273,21 @@ export default function StudentFormPage() {
 
   // Document upload trigger
   const triggerDocUpload = (docType: string) => {
+    if (docType === 'OTHER') {
+      setPendingOtherName('');
+      setShowOtherNameModal(true);
+      return;
+    }
     setActiveDocType(docType);
     docInputRef.current?.click();
+  };
+
+  const confirmOtherDocName = () => {
+    if (!pendingOtherName.trim()) return;
+    setOtherDocName(pendingOtherName.trim());
+    setShowOtherNameModal(false);
+    setActiveDocType('OTHER');
+    setTimeout(() => docInputRef.current?.click(), 100);
   };
 
   const handleDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,8 +295,11 @@ export default function StudentFormPage() {
     const docType = activeDocType;
     if (!file || !docType) return;
 
-    const label =
-      ALL_DOC_TYPES.find((d) => d.value === docType)?.label || docType;
+    const isOther = docType === 'OTHER';
+    const label = isOther
+      ? otherDocName || 'Other Document'
+      : ALL_DOC_TYPES.find((d) => d.value === docType)?.label || docType;
+
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result as string;
@@ -270,17 +313,20 @@ export default function StudentFormPage() {
         // saved in memory
       }
 
-      setDocuments((prev) =>
-        prev.filter((d) => d.type !== docType).concat({
+      setDocuments((prev) => {
+        // For OTHER type allow multiple, for others replace same type
+        const filtered = isOther ? prev : prev.filter((d) => d.type !== docType);
+        return filtered.concat({
           id: `${Date.now()}`,
-          name: file.name,
+          name: isOther ? label : file.name,
           filePath: dataUrl,
           type: docType,
           docLabel: label,
           fileSize: file.size,
           mimeType: file.type || 'application/octet-stream',
-        })
-      );
+        });
+      });
+      if (isOther) setOtherDocName('');
       success(`${label} attached successfully`);
     };
     reader.readAsDataURL(file);
@@ -351,12 +397,39 @@ export default function StudentFormPage() {
         admissionDate: form.admissionDate ? new Date(form.admissionDate) : null,
       };
 
+      // Include documents in payload
+      payload.documents = documents.map((doc) => ({
+        id: doc.id,
+        name: doc.name,
+        type: doc.type,
+        filePath: doc.filePath,
+        fileSize: doc.fileSize || 0,
+        mimeType: doc.mimeType || 'application/octet-stream',
+      }));
+
+      // Include initial fee payment if entered during admission
+      if (!isEdit && Number(feeForm.paidAmount || 0) > 0) {
+        payload.initialPayment = {
+          collectFee: true,
+          feeCategoryId: feeForm.feeCategoryId || undefined,
+          totalAmount: Number(feeForm.totalAmount || feeForm.paidAmount || 0),
+          paidAmount: Number(feeForm.paidAmount || 0),
+          paymentMethod: feeForm.paymentMethod || 'CASH',
+          paymentDate: feeForm.paymentDate,
+          remarks: feeForm.remarks || 'Admission fee payment',
+        };
+      }
+
       if (isEdit) {
         await apiCall(() => window.api.students.update(id!, payload));
         success('Student updated successfully');
       } else {
         await apiCall(() => window.api.students.create(payload));
-        success('Student created successfully');
+        if (Number(feeForm.paidAmount || 0) > 0) {
+          success(`Student created & initial payment of ₹${Number(feeForm.paidAmount).toLocaleString()} recorded!`);
+        } else {
+          success('Student created successfully');
+        }
       }
       navigate(isEdit ? `/students/${id}` : '/students');
     } catch (err) {
@@ -1014,7 +1087,155 @@ export default function StudentFormPage() {
               <Plus className="w-3.5 h-3.5" /> Upload Other
             </button>
           </div>
+
+          {/* Other Document Name Modal */}
+          {showOtherNameModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 border border-gray-200 dark:border-gray-700">
+                <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary-600" /> Document Name
+                </h4>
+                <p className="text-xs text-gray-500 mb-4">Enter a name for this custom document (e.g. Medical Report, Migration Certificate)</p>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="e.g. Medical Certificate"
+                  value={pendingOtherName}
+                  onChange={(e) => setPendingOtherName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') confirmOtherDocName(); if (e.key === 'Escape') setShowOtherNameModal(false); }}
+                  className="input w-full mb-4"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowOtherNameModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmOtherDocName}
+                    disabled={!pendingOtherName.trim()}
+                    className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Continue & Choose File
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* ── 6. Admission Fee & Payment (Last Section) ────────────────────── */}
+        {!isEdit && (
+          <div className="card p-6 border-2 border-emerald-100 dark:border-emerald-950/40 bg-gradient-to-br from-emerald-50/20 via-transparent to-transparent">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                  Admission Fee & Payment
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Collect fee or record initial payment during admission (leave blank if no payment received now)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-3 border-t border-emerald-100 dark:border-emerald-950/40">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                <Select
+                  label="Fee Category"
+                  options={feeCategories.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="Select category (e.g. Admission Fee)"
+                  value={feeForm.feeCategoryId}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, feeCategoryId: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Total Applicable Fee (₹)"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 5000"
+                  value={feeForm.totalAmount}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, totalAmount: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Amount Paid Now (₹)"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 5000"
+                  value={feeForm.paidAmount}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, paidAmount: e.target.value }))
+                  }
+                />
+                <Select
+                  label="Payment Method"
+                  options={PAYMENT_METHODS}
+                  value={feeForm.paymentMethod}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, paymentMethod: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Payment Date"
+                  type="date"
+                  value={feeForm.paymentDate}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, paymentDate: e.target.value }))
+                  }
+                />
+                <Input
+                  label="Payment Note / Receipt Remarks"
+                  placeholder="e.g. Admission fee receipt"
+                  value={feeForm.remarks}
+                  onChange={(e) =>
+                    setFeeForm((prev) => ({ ...prev, remarks: e.target.value }))
+                  }
+                />
+              </div>
+
+              {/* Live fee summary badge */}
+              {(Number(feeForm.paidAmount || 0) > 0 || Number(feeForm.totalAmount || 0) > 0) && (
+                <div className="rounded-xl bg-white dark:bg-gray-800/80 p-4 border border-emerald-200/70 dark:border-emerald-900/50 flex flex-wrap items-center justify-between gap-4 text-sm shadow-sm">
+                  <div>
+                    <span className="text-xs text-gray-500 block">Total Fee:</span>
+                    <strong className="text-base text-gray-900 dark:text-white">
+                      ₹{Number(feeForm.totalAmount || feeForm.paidAmount || 0).toLocaleString()}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500 block">Paid Now:</span>
+                    <strong className="text-base text-emerald-600 dark:text-emerald-400">
+                      ₹{Number(feeForm.paidAmount || 0).toLocaleString()}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500 block">Remaining Due:</span>
+                    <strong
+                      className={`text-base ${
+                        Number(feeForm.totalAmount || 0) - Number(feeForm.paidAmount || 0) > 0
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-gray-900 dark:text-white'
+                      }`}
+                    >
+                      ₹{Math.max(
+                        0,
+                        Number(feeForm.totalAmount || 0) - Number(feeForm.paidAmount || 0)
+                      ).toLocaleString()}
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Action Buttons ─────────────────────────────────────────────── */}
         <div className="flex justify-end gap-3 pt-4">

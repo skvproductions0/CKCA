@@ -4,6 +4,7 @@ import { checkSchoolLimits } from './feature.service';
 import {
   generateAdmissionNumber,
   generateStudentId,
+  rupeesToPaise,
   getErrorMessage,
 } from '../utils/helpers';
 
@@ -183,6 +184,24 @@ export async function createStudent(data: Record<string, unknown>, userId: strin
       include: { class: true, section: true, academicYear: true },
     });
 
+    // Save documents if any
+    if (documents.length > 0) {
+      for (const doc of documents) {
+        const pathValue = doc.filePath as string | undefined;
+        if (!pathValue) continue;
+        await db.document.create({
+          data: {
+            studentId: student.id,
+            name: (doc.name as string) || 'Document',
+            type: (doc.type as string) || 'OTHER',
+            filePath: pathValue,
+            fileSize: Number(doc.fileSize || 0),
+            mimeType: (doc.mimeType as string) || 'application/octet-stream',
+          },
+        });
+      }
+    }
+
     // Create student fee record if academic year is set
     if (student.academicYearId) {
       await createStudentFeeRecord(student.id, student.academicYearId, student.classId || undefined, schoolId);
@@ -205,6 +224,7 @@ export async function updateStudent(id: string, data: Record<string, unknown>, u
     }
     const raw = { ...data };
     const documents = Array.isArray(raw.documents) ? (raw.documents as Array<Record<string, unknown>>) : null;
+    delete raw.documents; // Remove so it doesn't pollute Prisma update data
 
     // Sanitize foreign keys
     let classId: string | null = null;
@@ -342,7 +362,7 @@ async function createStudentFeeRecord(studentId: string, academicYearId: string,
     });
     if (existingFee) return;
 
-    let totalPaise = 0;
+    let totalPaise = overrideTotalPaise ?? 0;
     let feeStructureId: string | undefined = undefined;
 
     if (classId) {
@@ -351,7 +371,9 @@ async function createStudentFeeRecord(studentId: string, academicYearId: string,
         include: { items: true },
       });
       if (feeStructure) {
-        totalPaise = feeStructure.items.reduce((sum, item) => sum + item.amountPaise, 0);
+        if (overrideTotalPaise === undefined) {
+          totalPaise = feeStructure.items.reduce((sum, item) => sum + item.amountPaise, 0);
+        }
         feeStructureId = feeStructure.id;
       }
     }

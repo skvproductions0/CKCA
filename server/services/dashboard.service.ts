@@ -9,8 +9,19 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
   const monthStart = startOfMonth(today);
   const monthEnd = endOfMonth(today);
 
-  const yearFilter = academicYearId ? { academicYearId } : {};
   const schoolFilter = schoolId ? { schoolId } : {};
+  const studentWhere: Record<string, unknown> = {
+    status: 'ACTIVE',
+    deletedAt: null,
+    ...schoolFilter,
+  };
+  if (academicYearId) {
+    studentWhere.OR = [
+      { academicYearId },
+      { academicYearId: null },
+    ];
+  }
+  const yearFilter = academicYearId ? { academicYearId } : {};
   const baseFilter = { ...yearFilter, ...schoolFilter };
 
   const [
@@ -30,7 +41,7 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
     classDistribution,
     examPerformance,
   ] = await Promise.all([
-    db.student.count({ where: { status: 'ACTIVE', deletedAt: null, ...baseFilter } }),
+    db.student.count({ where: studentWhere }),
     db.teacher.count({ where: { status: 'ACTIVE', deletedAt: null, ...schoolFilter } }),
     db.class.count({ where: { isActive: true, deletedAt: null, ...schoolFilter } }),
     getTodayAttendanceStats(dayStart, dayEnd, academicYearId, schoolId),
@@ -43,14 +54,17 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
       _sum: { amountPaise: true },
     }),
     db.studentFee.aggregate({
-      where: baseFilter,
+      where: {
+        ...baseFilter,
+        student: { status: 'ACTIVE', deletedAt: null },
+      },
       _sum: { totalPaise: true, paidPaise: true },
     }),
-    db.admission.count({ where: { ...baseFilter } }),
+    db.admission.count({ where: baseFilter }),
     db.feePayment.findMany({
       where: { status: 'COMPLETED', ...baseFilter },
       include: { student: { select: { name: true, admissionNumber: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { paymentDate: 'desc' },
       take: 5,
     }),
     db.admission.findMany({
@@ -59,7 +73,10 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
       take: 5,
     }),
     db.result.findMany({
-      where: baseFilter,
+      where: {
+        ...baseFilter,
+        ...(academicYearId ? { exam: { academicYearId } } : {}),
+      },
       include: {
         student: { select: { name: true } },
         exam: { select: { name: true } },
@@ -74,7 +91,10 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
     getExamPerformance(academicYearId, schoolId),
   ]);
 
-  const pendingPaise = (pendingFees._sum.totalPaise || 0) - (pendingFees._sum.paidPaise || 0);
+  const pendingPaise = Math.max(
+    0,
+    (pendingFees._sum.totalPaise || 0) - (pendingFees._sum.paidPaise || 0)
+  );
 
   return {
     stats: {
@@ -103,7 +123,7 @@ export async function getDashboardStats(academicYearId?: string, schoolId?: stri
 
 async function getTodayAttendanceStats(dayStart: Date, dayEnd: Date, academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
-  const where = {
+  const where: Record<string, unknown> = {
     date: { gte: dayStart, lte: dayEnd },
     ...(academicYearId ? { academicYearId } : {}),
     ...(schoolId ? { schoolId } : {}),
@@ -138,14 +158,15 @@ async function getMonthlyFeeChart(academicYearId?: string, schoolId?: string) {
 
 async function getAttendanceChart(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-  const year = new Date().getFullYear();
+  const now = new Date();
   const data = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  for (let i = 0; i < 6; i++) {
-    const start = new Date(year, i, 1);
-    const end = new Date(year, i + 1, 0, 23, 59, 59);
-    const where = {
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = startOfMonth(d);
+    const end = endOfMonth(d);
+    const where: Record<string, unknown> = {
       date: { gte: start, lte: end },
       ...(academicYearId ? { academicYearId } : {}),
       ...(schoolId ? { schoolId } : {}),
@@ -153,7 +174,7 @@ async function getAttendanceChart(academicYearId?: string, schoolId?: string) {
     const total = await db.attendance.count({ where });
     const present = await db.attendance.count({ where: { ...where, status: 'PRESENT' } });
     data.push({
-      month: months[i],
+      month: monthNames[d.getMonth()],
       present: total > 0 ? Math.round((present / total) * 100) : 0,
     });
   }
@@ -173,15 +194,19 @@ async function getClassDistribution(academicYearId?: string, schoolId?: string) 
 
   const data = await Promise.all(
     classes.map(async (cls) => {
-      const count = await db.student.count({
-        where: {
-          classId: cls.id,
-          status: 'ACTIVE',
-          deletedAt: null,
-          ...(academicYearId ? { academicYearId } : {}),
-          ...(schoolId ? { schoolId } : {}),
-        },
-      });
+      const studentWhere: Record<string, unknown> = {
+        classId: cls.id,
+        status: 'ACTIVE',
+        deletedAt: null,
+        ...(schoolId ? { schoolId } : {}),
+      };
+      if (academicYearId) {
+        studentWhere.OR = [
+          { academicYearId },
+          { academicYearId: null },
+        ];
+      }
+      const count = await db.student.count({ where: studentWhere });
       return { name: cls.name, students: count };
     })
   );

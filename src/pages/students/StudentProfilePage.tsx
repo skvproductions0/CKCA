@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, User, CreditCard, ClipboardCheck, FileText, FolderOpen, Activity, MoreVertical, Edit, Trash2, Eye, Download, ExternalLink } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, User, CreditCard, ClipboardCheck, FileText, FolderOpen, Activity, MoreVertical, Edit, Trash2, Eye, Download, ExternalLink, Printer, Plus } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader, LoadingSpinner, Badge } from '../../components/ui/Common';
 import { Button } from '../../components/ui/Button';
 import { Modal, TypeConfirmDialog } from '../../components/ui/Modal';
 import { formatCurrency, formatDate, apiCall, getLocalFileUrl } from '../../utils/helpers';
+import { generateReceiptPDF } from '../../utils/pdf';
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: User },
@@ -66,12 +67,13 @@ function ProfileMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () =>
 /* ── Main page ─────────────────────────────────────────────────────────── */
 export default function StudentProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const { academicYear } = useApp();
+  const { academicYear, schoolSettings } = useApp();
   const { error: showError, success } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [student, setStudent] = useState<Record<string, any> | null>(null);
   const [attendance, setAttendance] = useState<Record<string, number> | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [loading, setLoading] = useState(true);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -79,7 +81,30 @@ export default function StudentProfilePage() {
   const [docDataUrl, setDocDataUrl] = useState<string | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(false);
 
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) setActiveTab(tab);
+  }, [searchParams]);
+
   useEffect(() => { if (id) loadStudent(); }, [id]);
+
+  const handlePrintReceipt = async (payment: Record<string, unknown>) => {
+    try {
+      const paymentData = {
+        ...payment,
+        student: {
+          name: s.name,
+          admissionNumber: s.admissionNumber,
+          class: cls,
+          section: sec,
+        },
+      };
+      await generateReceiptPDF(paymentData, schoolSettings as Record<string, string>);
+      window.print();
+    } catch (err) {
+      showError('Failed to generate receipt PDF');
+    }
+  };
 
   useEffect(() => {
     if (!previewDoc?.filePath) {
@@ -253,37 +278,108 @@ export default function StudentProfilePage() {
               </div>
             )}
 
-            {activeTab === 'fees' && fee && (
+            {activeTab === 'fees' && (
               <div>
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="card p-4 bg-blue-50 dark:bg-blue-900/20">
-                    <p className="text-xs text-gray-500">Total Fee</p>
-                    <p className="text-xl font-bold">{formatCurrency(fee.totalPaise as number)}</p>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold text-gray-900 dark:text-white">Fee Status & Receipts</h4>
+                  <Button
+                    size="sm"
+                    onClick={() => navigate(`/payments/new?studentId=${id}`)}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Record Payment
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div className="card p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40">
+                    <p className="text-xs text-gray-500 font-medium">Total Applicable Fee</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">
+                      {formatCurrency(fee?.totalPaise as number || 0)}
+                    </p>
                   </div>
-                  <div className="card p-4 bg-green-50 dark:bg-green-900/20">
-                    <p className="text-xs text-gray-500">Paid</p>
-                    <p className="text-xl font-bold text-green-600">{formatCurrency(fee.paidPaise as number)}</p>
+                  <div className="card p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40">
+                    <p className="text-xs text-gray-500 font-medium">Total Paid</p>
+                    <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                      {formatCurrency(fee?.paidPaise as number || 0)}
+                    </p>
                   </div>
-                  <div className="card p-4 bg-orange-50 dark:bg-orange-900/20">
-                    <p className="text-xs text-gray-500">Pending</p>
-                    <p className="text-xl font-bold text-orange-600">{formatCurrency((fee.totalPaise as number) - (fee.paidPaise as number))}</p>
+                  <div className="card p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/40">
+                    <p className="text-xs text-gray-500 font-medium">Remaining Pending Due</p>
+                    <p className="text-xl font-bold text-orange-600 dark:text-orange-400 mt-1">
+                      {formatCurrency(Math.max(0, ((fee?.totalPaise as number) || 0) - ((fee?.paidPaise as number) || 0)))}
+                    </p>
                   </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-3 mb-6">
-                  <div className="bg-green-500 h-3 rounded-full transition-all" style={{ width: `${Math.min(100, ((fee.paidPaise as number) / (fee.totalPaise as number)) * 100)}%` }} />
+
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-6 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-3 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${(fee?.totalPaise as number) > 0 ? Math.min(100, (((fee?.paidPaise as number) || 0) / (fee?.totalPaise as number)) * 100) : 0}%`,
+                    }}
+                  />
                 </div>
-                <h4 className="font-medium mb-3">Payment History</h4>
-                {payments.length === 0 ? <p className="text-sm text-gray-500">No payments recorded</p> : (
-                  <div className="space-y-2">
-                    {payments.map((p, i) => (
-                      <div key={i} className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                        <div>
-                          <p className="text-sm font-medium">{p.receiptNumber as string}</p>
-                          <p className="text-xs text-gray-500">{formatDate(p.paymentDate as string)} • {p.paymentMethod as string}</p>
+
+                <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
+                  Payment History & Receipts ({payments.length})
+                </h4>
+
+                {payments.length === 0 ? (
+                  <div className="p-8 text-center bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+                    <CreditCard className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No payment receipts recorded yet</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => navigate(`/payments/new?studentId=${id}`)}
+                      className="mt-3"
+                    >
+                      Collect First Payment
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {payments.map((p, i) => {
+                      const catName = (p.feeCategory as { name?: string })?.name;
+                      return (
+                        <div
+                          key={i}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/40 gap-3"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-sm text-gray-900 dark:text-white">
+                                {p.receiptNumber as string}
+                              </span>
+                              {catName && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-medium">
+                                  {catName}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatDate(p.paymentDate as string)} • Method: {p.paymentMethod as string}
+                              {p.remarks ? ` • Note: ${p.remarks}` : ''}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 self-end sm:self-center">
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400 text-base">
+                              {formatCurrency(p.amountPaise as number)}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handlePrintReceipt(p)}
+                              className="flex items-center gap-1 text-xs"
+                            >
+                              <Printer className="w-3.5 h-3.5" /> Receipt
+                            </Button>
+                          </div>
                         </div>
-                        <span className="font-semibold text-green-600">{formatCurrency(p.amountPaise as number)}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -321,23 +417,41 @@ export default function StudentProfilePage() {
             )}
 
             {activeTab === 'documents' && (
-              documents.length === 0 ? <p className="text-sm text-gray-500">No documents uploaded</p> : (
+              documents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <FolderOpen className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No documents uploaded</p>
+                  <p className="text-xs text-gray-400 mt-1">Documents will appear here once uploaded from the edit page.</p>
+                </div>
+              ) : (
                 <div className="space-y-3">
                   {documents.map((d, i) => {
                     const docPath = d.filePath as string | undefined;
+                    const docType = d.type as string;
+                    // Map type to readable label
+                    const DOC_LABELS: Record<string, string> = {
+                      STUDENT_AADHAAR: "Student's Aadhaar Card", BIRTH_CERTIFICATE: 'Birth Certificate',
+                      TRANSFER_CERTIFICATE: 'Transfer Certificate (TC)', MARK_SHEET: 'Previous Class Mark Sheet',
+                      PASSPORT_PHOTO: 'Passport Size Photo', CASTE_CERTIFICATE: 'Caste Certificate',
+                      INCOME_CERTIFICATE: 'Income Certificate', FATHER_AADHAAR: "Father's Aadhaar Card",
+                      MOTHER_AADHAAR: "Mother's Aadhaar Card", GUARDIAN_AADHAAR: "Guardian's Aadhaar Card",
+                      PARENT_PAN: "Parent's PAN Card", PARENT_PHOTO: "Parent's Photo",
+                      ADDRESS_PROOF: 'Address Proof', INCOME_PROOF: 'Income Proof', OTHER: 'Other Document',
+                    };
+                    const docLabel = DOC_LABELS[docType] || docType;
                     return (
                       <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40">
                         <div className="flex items-center gap-3">
                           <FileText className="w-5 h-5 text-primary-600 flex-shrink-0" />
                           <div>
                             <p className="text-sm font-medium">{d.name as string}</p>
-                            <p className="text-xs text-gray-500">{d.type as string}</p>
+                            <p className="text-xs text-gray-500">{docLabel}</p>
                           </div>
                         </div>
                         {docPath && (
                           <button
                             type="button"
-                            onClick={() => setPreviewDoc({ name: d.name as string, type: d.type as string, filePath: docPath })}
+                            onClick={() => setPreviewDoc({ name: d.name as string, type: docLabel, filePath: docPath })}
                             className="text-xs text-primary-600 hover:text-primary-700 font-medium underline flex items-center gap-1.5 cursor-pointer bg-primary-50 dark:bg-primary-900/30 px-3 py-1.5 rounded-lg hover:bg-primary-100 transition-colors"
                           >
                             <Eye className="w-3.5 h-3.5" /> View Document
@@ -349,6 +463,7 @@ export default function StudentProfilePage() {
                 </div>
               )
             )}
+
 
             {activeTab === 'activity' && (
               <p className="text-sm text-gray-500">Recent activity for this student will appear here.</p>
