@@ -4,6 +4,12 @@ dist-electron/
 release/
 *.db
 *.db-journal
+*.db.bak
+*.bak
+prisma/*.db*
+prisma/*.bak
+scratch/
+*.log
 .env
 uploads/
 backups/

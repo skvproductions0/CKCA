@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import path from "path";
 import { app } from "electron";
 import fs from "fs";
+import bcrypt from "bcryptjs";
 
 let prisma: PrismaClient | null = null;
 
@@ -113,6 +114,24 @@ export async function initializeDatabase(): Promise<void> {
         { name: "Sports Fee", sortOrder: 8 },
         { name: "Other Fee", sortOrder: 9 },
       ],
+    });
+  }
+
+  // Ensure default Creator account exists
+  const creatorExists = await db.user.findFirst({
+    where: { role: "CREATOR", deletedAt: null },
+  });
+  if (!creatorExists) {
+    const creatorPasswordHash = await bcrypt.hash("Creator@2026!", 12);
+    await db.user.create({
+      data: {
+        username: "creator",
+        email: "creator@ckcareeracademy.com",
+        passwordHash: creatorPasswordHash,
+        fullName: "System Creator & Owner",
+        role: "CREATOR",
+        isActive: true,
+      },
     });
   }
 }

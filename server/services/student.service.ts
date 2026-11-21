@@ -1,5 +1,6 @@
 import { getPrismaClient } from '../database/client';
 import { createAuditLog } from './auth.service';
+import { checkSchoolLimits } from './feature.service';
 import {
   generateAdmissionNumber,
   generateStudentId,
@@ -17,19 +18,25 @@ interface StudentFilters {
   gender?: Gender;
   status?: StudentStatus;
   feeStatus?: 'paid' | 'partial' | 'pending';
+  schoolId?: string;
   page?: number;
   limit?: number;
 }
 
-export async function getStudents(filters: StudentFilters = {}) {
+export async function getStudents(filters: StudentFilters = {}, schoolId?: string) {
   const db = getPrismaClient();
   const page = filters.page || 1;
   const limit = filters.limit || 20;
   const skip = (page - 1) * limit;
 
+  const targetSchoolId = schoolId || filters.schoolId;
   const where: Record<string, unknown> = {
     deletedAt: null,
   };
+
+  if (targetSchoolId) {
+    where.schoolId = targetSchoolId;
+  }
 
   if (filters.search) {
     where.OR = [
@@ -91,7 +98,7 @@ export async function getStudents(filters: StudentFilters = {}) {
   };
 }
 
-export async function getStudentById(id: string) {
+export async function getStudentById(id: string, schoolId?: string) {
   const db = getPrismaClient();
   const student = await db.student.findUnique({
     where: { id },
@@ -107,43 +114,58 @@ export async function getStudentById(id: string) {
     },
   });
   if (!student) throw new Error('Student not found.');
+  if (schoolId && student.schoolId && student.schoolId !== schoolId) {
+    throw new Error('Student not found.');
+  }
   return student;
 }
 
-export async function createStudent(data: Record<string, unknown>, userId: string) {
+export async function createStudent(data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
   try {
+    const targetSchoolId = schoolId || (data.schoolId as string);
+    if (targetSchoolId) {
+      await checkSchoolLimits(targetSchoolId, 'STUDENT');
+    }
     const year = new Date().getFullYear();
-    let counter = await db.admissionCounter.findUnique({ where: { year } });
+    let counter = await db.admissionCounter.findFirst({
+      where: { year, ...(schoolId ? { schoolId } : {}) },
+    });
     if (!counter) {
-      counter = await db.admissionCounter.create({ data: { year, counter: 0 } });
+      counter = await db.admissionCounter.create({
+        data: { year, counter: 0, ...(schoolId ? { schoolId } : {}) },
+      });
     }
     const newCounter = counter.counter + 1;
-    await db.admissionCounter.update({ where: { year }, data: { counter: newCounter } });
+    await db.admissionCounter.update({ where: { id: counter.id }, data: { counter: newCounter } });
 
     const admissionNumber = generateAdmissionNumber(year, newCounter);
     const studentId = generateStudentId(year, newCounter);
 
     const raw = { ...data };
+    if (schoolId) {
+      raw.schoolId = schoolId;
+    }
     let classId = (typeof raw.classId === 'string' && raw.classId.trim()) ? raw.classId.trim() : null;
     if (classId) {
-      const exists = await db.class.findUnique({ where: { id: classId } });
+      const exists = await db.class.findFirst({ where: { id: classId, ...(schoolId ? { schoolId } : {}) } });
       if (!exists) classId = null;
     }
 
     let sectionId = (typeof raw.sectionId === 'string' && raw.sectionId.trim()) ? raw.sectionId.trim() : null;
     if (sectionId) {
-      const exists = await db.section.findUnique({ where: { id: sectionId } });
+      const exists = await db.section.findFirst({ where: { id: sectionId, ...(schoolId ? { schoolId } : {}) } });
       if (!exists) sectionId = null;
     }
 
     let academicYearId = (typeof raw.academicYearId === 'string' && raw.academicYearId.trim()) ? raw.academicYearId.trim() : null;
     if (academicYearId) {
-      const exists = await db.academicYear.findUnique({ where: { id: academicYearId } });
+      const exists = await db.academicYear.findFirst({ where: { id: academicYearId, ...(schoolId ? { schoolId } : {}) } });
       if (!exists) academicYearId = null;
     }
     if (!academicYearId) {
-      const fallback = (await db.academicYear.findFirst({ where: { isCurrent: true } })) || (await db.academicYear.findFirst());
+      const fallback = (await db.academicYear.findFirst({ where: { isCurrent: true, ...(schoolId ? { schoolId } : {}) } }))
+        || (await db.academicYear.findFirst({ where: { ...(schoolId ? { schoolId } : {}) } }));
       academicYearId = fallback?.id || null;
     }
 
@@ -163,19 +185,24 @@ export async function createStudent(data: Record<string, unknown>, userId: strin
 
     // Create student fee record if academic year is set
     if (student.academicYearId) {
-      await createStudentFeeRecord(student.id, student.academicYearId, student.classId || undefined);
+      await createStudentFeeRecord(student.id, student.academicYearId, student.classId || undefined, schoolId);
     }
 
-    await createAuditLog(userId, 'STUDENT_CREATED', 'Student', student.id, `Created student: ${student.name}`);
+    await createAuditLog(userId, 'STUDENT_CREATED', 'Student', student.id, `Created student: ${student.name}`, schoolId);
     return student;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
 }
 
-export async function updateStudent(id: string, data: Record<string, unknown>, userId: string) {
+export async function updateStudent(id: string, data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
   try {
+    const existing = await db.student.findUnique({ where: { id } });
+    if (!existing) throw new Error('Student not found.');
+    if (schoolId && existing.schoolId && existing.schoolId !== schoolId) {
+      throw new Error('Student not found.');
+    }
     const raw = { ...data };
     const documents = Array.isArray(raw.documents) ? (raw.documents as Array<Record<string, unknown>>) : null;
 
@@ -292,17 +319,22 @@ export async function updateStudent(id: string, data: Record<string, unknown>, u
   }
 }
 
-export async function archiveStudent(id: string, userId: string) {
+export async function archiveStudent(id: string, userId: string, schoolId?: string) {
   const db = getPrismaClient();
+  const existing = await db.student.findUnique({ where: { id } });
+  if (!existing) throw new Error('Student not found.');
+  if (schoolId && existing.schoolId && existing.schoolId !== schoolId) {
+    throw new Error('Student not found.');
+  }
   const student = await db.student.update({
     where: { id },
     data: { status: 'ARCHIVED', deletedAt: new Date() },
   });
-  await createAuditLog(userId, 'STUDENT_ARCHIVED', 'Student', id, `Archived student: ${student.name}`);
+  await createAuditLog(userId, 'STUDENT_ARCHIVED', 'Student', id, `Archived student: ${student.name}`, schoolId);
   return student;
 }
 
-async function createStudentFeeRecord(studentId: string, academicYearId: string, classId?: string) {
+async function createStudentFeeRecord(studentId: string, academicYearId: string, classId?: string, schoolId?: string) {
   try {
     const db = getPrismaClient();
     const existingFee = await db.studentFee.findUnique({
@@ -315,7 +347,7 @@ async function createStudentFeeRecord(studentId: string, academicYearId: string,
 
     if (classId) {
       const feeStructure = await db.feeStructure.findFirst({
-        where: { classId, academicYearId, isActive: true },
+        where: { classId, academicYearId, isActive: true, ...(schoolId ? { schoolId } : {}) },
         include: { items: true },
       });
       if (feeStructure) {
@@ -331,6 +363,7 @@ async function createStudentFeeRecord(studentId: string, academicYearId: string,
         academicYearId,
         totalPaise,
         paidPaise: 0,
+        ...(schoolId ? { schoolId } : {}),
       },
     });
   } catch (err) {
@@ -338,10 +371,11 @@ async function createStudentFeeRecord(studentId: string, academicYearId: string,
   }
 }
 
-export async function getStudentAttendanceSummary(studentId: string, academicYearId?: string) {
+export async function getStudentAttendanceSummary(studentId: string, academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const where: Record<string, unknown> = { studentId };
   if (academicYearId) (where as Record<string, unknown>).academicYearId = academicYearId;
+  if (schoolId) (where as Record<string, unknown>).schoolId = schoolId;
 
   const [total, present, absent, leave] = await Promise.all([
     db.attendance.count({ where }),

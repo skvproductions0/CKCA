@@ -6,9 +6,14 @@ import { createAuditLog } from './auth.service';
 
 export function getUploadsPath(): string {
   const isDev = process.env.NODE_ENV === 'development';
-  const base = isDev
-    ? path.join(process.cwd(), 'uploads')
-    : path.join(app.getPath('userData'), 'uploads');
+  let base: string;
+  try {
+    base = isDev || !app || !app.getPath
+      ? path.join(process.cwd(), 'uploads')
+      : path.join(app.getPath('userData'), 'uploads');
+  } catch {
+    base = path.join(process.cwd(), 'uploads');
+  }
   if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
   return base;
 }
@@ -22,11 +27,26 @@ export async function getBackupsPath(): Promise<string> {
   }
 
   const isDev = process.env.NODE_ENV === 'development';
-  const base = isDev
-    ? path.join(process.cwd(), 'backups')
-    : path.join(app.getPath('userData'), 'backups');
+  let base: string;
+  try {
+    base = isDev || !app || !app.getPath
+      ? path.join(process.cwd(), 'backups')
+      : path.join(app.getPath('userData'), 'backups');
+  } catch {
+    base = path.join(process.cwd(), 'backups');
+  }
   if (!fs.existsSync(base)) fs.mkdirSync(base, { recursive: true });
   return base;
+}
+
+function getSanitizedUploadDir(subfolder: string): string {
+  const uploadsPath = path.resolve(getUploadsPath());
+  const sanitized = (subfolder || 'misc').replace(/\0/g, '').replace(/^[\\/]+/, '');
+  const targetDir = path.resolve(uploadsPath, sanitized);
+  if (!targetDir.startsWith(uploadsPath)) {
+    throw new Error('Invalid subfolder path traversal detected.');
+  }
+  return targetDir;
 }
 
 export async function saveFile(
@@ -34,8 +54,7 @@ export async function saveFile(
   filename: string,
   subfolder: string
 ): Promise<string> {
-  const uploadsPath = getUploadsPath();
-  const dir = path.join(uploadsPath, subfolder);
+  const dir = getSanitizedUploadDir(subfolder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const ext = path.extname(filename);
@@ -109,8 +128,7 @@ export async function selectFile(filters?: { name: string; extensions: string[] 
  * Returns the destination path (inside uploads/).
  */
 export async function copyFileToUploads(srcPath: string, subfolder: string): Promise<string> {
-  const uploadsPath = getUploadsPath();
-  const dir = path.join(uploadsPath, subfolder);
+  const dir = getSanitizedUploadDir(subfolder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const ext = path.extname(srcPath);

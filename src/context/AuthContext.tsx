@@ -6,9 +6,13 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, schoolCode?: string) => Promise<User>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  isCreator: boolean;
+  impersonatedSchoolId: string | null;
+  enterSchool: (schoolId: string) => Promise<void>;
+  exitSchool: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -16,6 +20,9 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('sms_token'));
+  const [impersonatedSchoolId, setImpersonatedSchoolId] = useState<string | null>(
+    localStorage.getItem('sms_impersonated_school')
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   function getDesktopApi() {
@@ -33,10 +40,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const validUser = await apiCall(() => getDesktopApi().auth.validate(storedToken));
           setUser(validUser);
           setToken(storedToken);
+
+          // Restore Creator's impersonated school mode if saved
+          const storedSchool = localStorage.getItem('sms_impersonated_school');
+          if (validUser && validUser.role === 'CREATOR' && storedSchool) {
+            try {
+              await getDesktopApi().creator.enterSchool(storedSchool);
+              setImpersonatedSchoolId(storedSchool);
+            } catch {
+              localStorage.removeItem('sms_impersonated_school');
+              setImpersonatedSchoolId(null);
+            }
+          }
         } catch {
           localStorage.removeItem('sms_token');
+          localStorage.removeItem('sms_impersonated_school');
           setToken(null);
           setUser(null);
+          setImpersonatedSchoolId(null);
         }
       }
       setIsLoading(false);
@@ -44,11 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     validateSession();
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const result = await apiCall(() => getDesktopApi().auth.login(username, password));
+  const login = useCallback(async (username: string, password: string, schoolCode?: string): Promise<User> => {
+    const result = await apiCall(() => getDesktopApi().auth.login(username, password, schoolCode));
     setUser(result.user);
     setToken(result.token);
+    setImpersonatedSchoolId(null);
     localStorage.setItem('sms_token', result.token);
+    localStorage.removeItem('sms_impersonated_school');
+    return result.user;
   }, []);
 
   const logout = useCallback(async () => {
@@ -57,13 +81,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setToken(null);
+    setImpersonatedSchoolId(null);
     localStorage.removeItem('sms_token');
+    localStorage.removeItem('sms_impersonated_school');
   }, [token]);
+
+  const enterSchool = useCallback(async (schoolId: string) => {
+    await apiCall(() => getDesktopApi().creator.enterSchool(schoolId));
+    setImpersonatedSchoolId(schoolId);
+    localStorage.setItem('sms_impersonated_school', schoolId);
+  }, []);
+
+  const exitSchool = useCallback(async () => {
+    await apiCall(() => getDesktopApi().creator.exitSchool());
+    setImpersonatedSchoolId(null);
+    localStorage.removeItem('sms_impersonated_school');
+  }, []);
 
   return (
     <AuthContext.Provider value={{
-      user, token, isLoading, login, logout,
+      user,
+      token,
+      isLoading,
+      login,
+      logout,
       isAuthenticated: !!user,
+      isCreator: user?.role === 'CREATOR',
+      impersonatedSchoolId,
+      enterSchool,
+      exitSchool,
     }}>
       {children}
     </AuthContext.Provider>

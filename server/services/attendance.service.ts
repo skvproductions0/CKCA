@@ -2,11 +2,13 @@ import { getPrismaClient } from '../database/client';
 import { createAuditLog } from './auth.service';
 import { getErrorMessage } from '../utils/helpers';
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import { assertSessionWritable } from './session.service';
 
 export async function getAttendanceForClass(
   sectionId: string,
   date: Date,
-  academicYearId: string
+  academicYearId: string,
+  schoolId?: string
 ) {
   const db = getPrismaClient();
   const section = await db.section.findUnique({
@@ -14,6 +16,9 @@ export async function getAttendanceForClass(
     include: { class: true },
   });
   if (!section) throw new Error('Section not found.');
+  if (schoolId && section.schoolId && section.schoolId !== schoolId) {
+    throw new Error('Section not found.');
+  }
 
   const dayStart = startOfDay(date);
   const students = await db.student.findMany({
@@ -22,6 +27,7 @@ export async function getAttendanceForClass(
       academicYearId,
       status: 'ACTIVE',
       deletedAt: null,
+      ...(schoolId ? { schoolId } : {}),
     },
     orderBy: { rollNumber: 'asc' },
   });
@@ -31,6 +37,7 @@ export async function getAttendanceForClass(
       sectionId,
       date: dayStart,
       academicYearId,
+      ...(schoolId ? { schoolId } : {}),
     },
   });
 
@@ -53,9 +60,19 @@ export async function saveAttendance(
     date: Date;
     records: { studentId: string; status: 'PRESENT' | 'ABSENT' | 'LEAVE'; remarks?: string }[];
   },
-  userId: string
+  userId: string,
+  schoolId?: string
 ) {
   const db = getPrismaClient();
+  await assertSessionWritable(data.academicYearId);
+
+  if (schoolId) {
+    const section = await db.section.findUnique({ where: { id: data.sectionId } });
+    if (!section || (section.schoolId && section.schoolId !== schoolId)) {
+      throw new Error('Section not found.');
+    }
+  }
+
   const dayStart = startOfDay(data.date);
 
   try {
@@ -75,6 +92,7 @@ export async function saveAttendance(
             date: dayStart,
             status: record.status,
             remarks: record.remarks,
+            ...(schoolId ? { schoolId } : {}),
           },
           update: {
             status: record.status,
@@ -89,7 +107,8 @@ export async function saveAttendance(
       'ATTENDANCE_SAVED',
       'Attendance',
       data.sectionId,
-      `Saved attendance for ${data.records.length} students on ${dayStart.toISOString().split('T')[0]}`
+      `Saved attendance for ${data.records.length} students on ${dayStart.toISOString().split('T')[0]}`,
+      schoolId
     );
 
     return results;
@@ -98,22 +117,30 @@ export async function saveAttendance(
   }
 }
 
-export async function getAttendanceReport(type: string, filters: {
-  studentId?: string;
-  sectionId?: string;
-  classId?: string;
-  academicYearId?: string;
-  month?: number;
-  year?: number;
-  threshold?: number;
-}) {
+export async function getAttendanceReport(
+  type: string,
+  filters: {
+    studentId?: string;
+    sectionId?: string;
+    classId?: string;
+    academicYearId?: string;
+    month?: number;
+    year?: number;
+    threshold?: number;
+    schoolId?: string;
+  },
+  schoolId?: string
+) {
   const db = getPrismaClient();
+  const targetSchoolId = schoolId || filters.schoolId;
+  const schoolFilter = targetSchoolId ? { schoolId: targetSchoolId } : {};
   const yearFilter = filters.academicYearId ? { academicYearId: filters.academicYearId } : {};
+  const baseFilter = { ...yearFilter, ...schoolFilter };
 
   switch (type) {
     case 'student': {
       if (!filters.studentId) throw new Error('Student ID required.');
-      const where = { studentId: filters.studentId, ...yearFilter };
+      const where = { studentId: filters.studentId, ...baseFilter };
       const [total, present, absent, leave] = await Promise.all([
         db.attendance.count({ where }),
         db.attendance.count({ where: { ...where, status: 'PRESENT' } }),
@@ -140,7 +167,7 @@ export async function getAttendanceReport(type: string, filters: {
       const end = endOfMonth(new Date(year, month));
       const where = {
         date: { gte: start, lte: end },
-        ...yearFilter,
+        ...baseFilter,
         ...(filters.sectionId ? { sectionId: filters.sectionId } : {}),
       };
       const records = await db.attendance.findMany({
@@ -171,11 +198,11 @@ export async function getAttendanceReport(type: string, filters: {
     case 'class': {
       if (!filters.sectionId) throw new Error('Section ID required.');
       const students = await db.student.findMany({
-        where: { sectionId: filters.sectionId, status: 'ACTIVE', ...yearFilter },
+        where: { sectionId: filters.sectionId, status: 'ACTIVE', ...baseFilter },
       });
       const reports = await Promise.all(
         students.map(async (student) => {
-          const where = { studentId: student.id, ...yearFilter };
+          const where = { studentId: student.id, ...baseFilter };
           const [total, present] = await Promise.all([
             db.attendance.count({ where }),
             db.attendance.count({ where: { ...where, status: 'PRESENT' } }),
@@ -194,12 +221,12 @@ export async function getAttendanceReport(type: string, filters: {
     case 'low': {
       const threshold = filters.threshold || 75;
       const students = await db.student.findMany({
-        where: { status: 'ACTIVE', deletedAt: null, ...yearFilter },
+        where: { status: 'ACTIVE', deletedAt: null, ...baseFilter },
         include: { class: true, section: true },
       });
       const lowAttendance = [];
       for (const student of students) {
-        const where = { studentId: student.id, ...yearFilter };
+        const where = { studentId: student.id, ...baseFilter };
         const [total, present] = await Promise.all([
           db.attendance.count({ where }),
           db.attendance.count({ where: { ...where, status: 'PRESENT' } }),
@@ -216,13 +243,14 @@ export async function getAttendanceReport(type: string, filters: {
   }
 }
 
-export async function getDailyAttendance(date: Date, academicYearId?: string) {
+export async function getDailyAttendance(date: Date, academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const dayStart = startOfDay(date);
   const dayEnd = endOfDay(date);
   const where = {
     date: { gte: dayStart, lte: dayEnd },
     ...(academicYearId ? { academicYearId } : {}),
+    ...(schoolId ? { schoolId } : {}),
   };
 
   const records = await db.attendance.findMany({

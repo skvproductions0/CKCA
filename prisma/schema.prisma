@@ -7,34 +7,105 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==================== SCHOOLS & MULTI-TENANCY ====================
+
+model School {
+  id                 String    @id @default(uuid())
+  name               String
+  shortCode          String    @default("CKCA")
+  code               String    @unique
+  status             String    @default("ACTIVE") // ACTIVE, SUSPENDED, ARCHIVED
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  phone              String?
+  email              String?
+  website            String?
+  board              String?   @default("CBSE") // CBSE, ICSE, State, etc.
+  affiliationNumber  String?
+  principalName      String?
+  logoPath           String?
+  faviconPath        String?
+  signaturePath      String?
+  stampPath          String?
+  primaryColor       String    @default("#2563eb")
+  secondaryColor     String    @default("#1e40af")
+  reportHeader       String?
+  reportFooter       String?
+  maxStudents        Int       @default(1000)
+  maxStaff           Int       @default(100)
+  licenseExpiresAt   DateTime?
+  maintenanceMode    Boolean   @default(false)
+  maintenanceMessage String?
+  plan               String    @default("PREMIUM") // BASIC, STANDARD, PREMIUM, CUSTOM
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  features           SchoolFeature[]
+  users              User[]
+  schoolSettings     SchoolSetting[]
+  gradingRules       GradingRule[]
+  feeCategories      FeeCategory[]
+  academicYears      AcademicYear[]
+  classes            Class[]
+  sections           Section[]
+  teachers           Teacher[]
+  students           Student[]
+  admissions         Admission[]
+  subjects           Subject[]
+  feeStructures      FeeStructure[]
+  studentFees        StudentFee[]
+  feePayments        FeePayment[]
+  attendances        Attendance[]
+  exams              Exam[]
+  results            Result[]
+  documents          Document[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  receiptCounters    ReceiptCounter[]
+  admissionCounters  AdmissionCounter[]
+}
+
 // ==================== AUTH & USERS ====================
 
 model User {
   id           String    @id @default(uuid())
+  schoolId     String?
   username     String    @unique
   email        String    @unique
   passwordHash String
   fullName     String
-  role         String    @default("TEACHER")
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
+  role                String    @default("TEACHER")
+  isActive            Boolean   @default(true)
+  isLocked            Boolean   @default(false)
+  lockReason          String?
+  forcePasswordChange Boolean   @default(false)
+  lastLoginAt         DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
+  school        School?        @relation(fields: [schoolId], references: [id])
   auditLogs     AuditLog[]
   feePayments   FeePayment[]
   sessions      Session[]
   teacher       Teacher?
   notifications Notification[]
+
+  @@index([schoolId])
 }
 
 model Session {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id           String    @id @default(uuid())
+  userId       String
+  token        String    @unique
+  device       String?
+  ipAddress    String?
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -46,6 +117,7 @@ model Session {
 
 model SchoolSetting {
   id                 String   @id @default(uuid())
+  schoolId           String?
   schoolName         String   @default("ABC Public School Management System")
   logoPath           String?
   address            String?
@@ -63,10 +135,15 @@ model SchoolSetting {
   autoBackupEnabled  Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@index([schoolId])
 }
 
 model GradingRule {
   id          String   @id @default(uuid())
+  schoolId    String?
   grade       String
   minPercent  Float
   maxPercent  Float
@@ -75,11 +152,15 @@ model GradingRule {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  school School? @relation(fields: [schoolId], references: [id])
+
   @@unique([grade])
+  @@index([schoolId])
 }
 
 model FeeCategory {
   id          String   @id @default(uuid())
+  schoolId    String?
   name        String   @unique
   description String?
   isActive    Boolean  @default(true)
@@ -87,22 +168,28 @@ model FeeCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  school            School?            @relation(fields: [schoolId], references: [id])
   feeStructureItems FeeStructureItem[]
   feePayments       FeePayment[]
+
+  @@index([schoolId])
 }
 
 // ==================== ACADEMIC YEAR ====================
 
 model AcademicYear {
   id        String   @id @default(uuid())
-  name      String   @unique
+  schoolId  String?
+  name      String
   startDate DateTime
   endDate   DateTime
   isCurrent Boolean  @default(false)
   isActive  Boolean  @default(true)
+  isClosed  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  school        School?        @relation(fields: [schoolId], references: [id])
   students      Student[]
   admissions    Admission[]
   feeStructures FeeStructure[]
@@ -111,12 +198,16 @@ model AcademicYear {
   attendances   Attendance[]
   exams         Exam[]
   results       Result[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
 }
 
 // ==================== CLASSES & SECTIONS ====================
 
 model Class {
   id           String    @id @default(uuid())
+  schoolId     String?
   name         String
   numericOrder Int       @default(0)
   isActive     Boolean   @default(true)
@@ -124,17 +215,20 @@ model Class {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
+  school        School?        @relation(fields: [schoolId], references: [id])
   sections      Section[]
   students      Student[]
   subjects      Subject[]
   feeStructures FeeStructure[]
   exams         Exam[]
 
-  @@unique([name])
+  @@unique([schoolId, name])
+  @@index([schoolId])
 }
 
 model Section {
   id             String    @id @default(uuid())
+  schoolId       String?
   name           String
   classId        String
   classTeacherId String?
@@ -143,6 +237,7 @@ model Section {
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
+  school       School?      @relation(fields: [schoolId], references: [id])
   class        Class        @relation(fields: [classId], references: [id])
   classTeacher Teacher?     @relation(fields: [classTeacherId], references: [id])
   students     Student[]
@@ -151,13 +246,15 @@ model Section {
 
   @@unique([classId, name])
   @@index([classId])
+  @@index([schoolId])
 }
 
 // ==================== TEACHERS ====================
 
 model Teacher {
   id               String    @id @default(uuid())
-  employeeId       String    @unique
+  schoolId         String?
+  employeeId       String
   userId           String?   @unique
   name             String
   fatherName       String?
@@ -179,20 +276,24 @@ model Teacher {
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
+  school   School?   @relation(fields: [schoolId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
   sections Section[]
   subjects Subject[]
 
+  @@unique([schoolId, employeeId])
   @@index([name])
   @@index([status])
+  @@index([schoolId])
 }
 
 // ==================== STUDENTS ====================
 
 model Student {
   id               String    @id @default(uuid())
-  studentId        String    @unique
-  admissionNumber  String    @unique
+  schoolId         String?
+  studentId        String
+  admissionNumber  String
   name             String
   fatherName       String?
   fatherMobile     String?
@@ -233,6 +334,7 @@ model Student {
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
+  school       School?       @relation(fields: [schoolId], references: [id])
   class        Class?        @relation(fields: [classId], references: [id])
   section      Section?      @relation(fields: [sectionId], references: [id])
   academicYear AcademicYear? @relation(fields: [academicYearId], references: [id])
@@ -244,21 +346,25 @@ model Student {
   documents   Document[]
   admissions  Admission[]
 
+  @@unique([schoolId, studentId])
+  @@unique([schoolId, admissionNumber])
   @@index([name])
   @@index([admissionNumber])
   @@index([classId])
   @@index([sectionId])
   @@index([academicYearId])
   @@index([status])
+  @@index([schoolId])
 }
 
 // ==================== ADMISSIONS ====================
 
 model Admission {
   id               String    @id @default(uuid())
+  schoolId         String?
   studentId        String?
   academicYearId   String
-  admissionNumber  String    @unique
+  admissionNumber  String
   name             String
   fatherName       String?
   fatherMobile     String?
@@ -297,17 +403,22 @@ model Admission {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  school       School?      @relation(fields: [schoolId], references: [id])
   student      Student?     @relation(fields: [studentId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
 
+  @@unique([schoolId, studentId])
+  @@unique([schoolId, admissionNumber])
   @@index([academicYearId])
   @@index([status])
+  @@index([schoolId])
 }
 
 // ==================== SUBJECTS ====================
 
 model Subject {
   id           String    @id @default(uuid())
+  schoolId     String?
   name         String
   code         String
   classId      String
@@ -320,18 +431,21 @@ model Subject {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
+  school  School?  @relation(fields: [schoolId], references: [id])
   class   Class    @relation(fields: [classId], references: [id])
   teacher Teacher? @relation(fields: [teacherId], references: [id])
   results Result[]
 
   @@unique([classId, code])
   @@index([classId])
+  @@index([schoolId])
 }
 
 // ==================== FEES ====================
 
 model FeeStructure {
   id             String   @id @default(uuid())
+  schoolId       String?
   name           String
   academicYearId String
   classId        String?
@@ -342,6 +456,7 @@ model FeeStructure {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  school       School?            @relation(fields: [schoolId], references: [id])
   academicYear AcademicYear       @relation(fields: [academicYearId], references: [id])
   class        Class?             @relation(fields: [classId], references: [id])
   items        FeeStructureItem[]
@@ -349,6 +464,7 @@ model FeeStructure {
 
   @@index([academicYearId])
   @@index([classId])
+  @@index([schoolId])
 }
 
 model FeeStructureItem {
@@ -364,17 +480,20 @@ model FeeStructureItem {
 }
 
 model StudentFee {
-  id             String   @id @default(uuid())
-  studentId      String
-  feeStructureId String?
-  academicYearId String
-  totalPaise     Int      @default(0)
-  paidPaise      Int      @default(0)
-  discountPaise  Int      @default(0)
-  isDemo         Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(uuid())
+  schoolId         String?
+  studentId        String
+  feeStructureId   String?
+  academicYearId   String
+  totalPaise       Int      @default(0)
+  paidPaise        Int      @default(0)
+  discountPaise    Int      @default(0)
+  previousDuePaise Int      @default(0)
+  isDemo           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
+  school       School?       @relation(fields: [schoolId], references: [id])
   student      Student       @relation(fields: [studentId], references: [id])
   feeStructure FeeStructure? @relation(fields: [feeStructureId], references: [id])
   academicYear AcademicYear  @relation(fields: [academicYearId], references: [id])
@@ -382,10 +501,12 @@ model StudentFee {
   @@unique([studentId, academicYearId])
   @@index([studentId])
   @@index([academicYearId])
+  @@index([schoolId])
 }
 
 model FeePayment {
   id               String   @id @default(uuid())
+  schoolId         String?
   receiptNumber    String   @unique
   studentId        String
   academicYearId   String
@@ -402,21 +523,24 @@ model FeePayment {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  student      Student      @relation(fields: [studentId], references: [id])
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  feeCategory  FeeCategory? @relation(fields: [feeCategoryId], references: [id])
-  collectedBy  User?        @relation(fields: [collectedById], references: [id])
+  school       School?       @relation(fields: [schoolId], references: [id])
+  student      Student       @relation(fields: [studentId], references: [id])
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id])
+  feeCategory  FeeCategory?  @relation(fields: [feeCategoryId], references: [id])
+  collectedBy  User?         @relation(fields: [collectedById], references: [id])
 
   @@index([studentId])
   @@index([paymentDate])
   @@index([receiptNumber])
   @@index([academicYearId])
+  @@index([schoolId])
 }
 
 // ==================== ATTENDANCE ====================
 
 model Attendance {
   id             String   @id @default(uuid())
+  schoolId       String?
   studentId      String
   sectionId      String
   academicYearId String
@@ -427,6 +551,7 @@ model Attendance {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  school       School?      @relation(fields: [schoolId], references: [id])
   student      Student      @relation(fields: [studentId], references: [id])
   section      Section      @relation(fields: [sectionId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
@@ -434,12 +559,14 @@ model Attendance {
   @@unique([studentId, date])
   @@index([sectionId, date])
   @@index([academicYearId])
+  @@index([schoolId])
 }
 
 // ==================== EXAMS & RESULTS ====================
 
 model Exam {
   id             String   @id @default(uuid())
+  schoolId       String?
   name           String
   academicYearId String
   classId        String
@@ -451,6 +578,7 @@ model Exam {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  school       School?      @relation(fields: [schoolId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   class        Class        @relation(fields: [classId], references: [id])
   section      Section?     @relation(fields: [sectionId], references: [id])
@@ -458,10 +586,12 @@ model Exam {
 
   @@index([academicYearId])
   @@index([classId])
+  @@index([schoolId])
 }
 
 model Result {
   id             String   @id @default(uuid())
+  schoolId       String?
   studentId      String
   examId         String
   subjectId      String
@@ -476,6 +606,7 @@ model Result {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  school       School?      @relation(fields: [schoolId], references: [id])
   student      Student      @relation(fields: [studentId], references: [id])
   exam         Exam         @relation(fields: [examId], references: [id])
   subject      Subject      @relation(fields: [subjectId], references: [id])
@@ -485,12 +616,14 @@ model Result {
   @@index([examId])
   @@index([studentId])
   @@index([academicYearId])
+  @@index([schoolId])
 }
 
 // ==================== DOCUMENTS ====================
 
 model Document {
   id         String   @id @default(uuid())
+  schoolId   String?
   studentId  String
   name       String
   type       String   @default("OTHER")
@@ -499,15 +632,18 @@ model Document {
   mimeType   String?
   uploadedAt DateTime @default(now())
 
+  school  School? @relation(fields: [schoolId], references: [id])
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
+  @@index([schoolId])
 }
 
 // ==================== NOTIFICATIONS ====================
 
 model Notification {
   id        String   @id @default(uuid())
+  schoolId  String?
   userId    String?
   title     String
   message   String
@@ -516,16 +652,19 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id])
+  school School? @relation(fields: [schoolId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([isRead])
+  @@index([schoolId])
 }
 
 // ==================== AUDIT LOG ====================
 
 model AuditLog {
   id        String   @id @default(uuid())
+  schoolId  String?
   userId    String?
   action    String
   entity    String?
@@ -534,23 +673,62 @@ model AuditLog {
   ipAddress String?
   createdAt DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id])
+  school School? @relation(fields: [schoolId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+  @@index([schoolId])
 }
 
 // ==================== RECEIPT COUNTER ====================
 
 model ReceiptCounter {
-  id      String @id @default(uuid())
-  year    Int    @unique
-  counter Int    @default(0)
+  id       String  @id @default(uuid())
+  schoolId String?
+  year     Int
+  counter  Int     @default(0)
+
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@unique([schoolId, year])
+  @@index([schoolId])
 }
 
 model AdmissionCounter {
-  id      String @id @default(uuid())
-  year    Int    @unique
-  counter Int    @default(0)
+  id       String  @id @default(uuid())
+  schoolId String?
+  year     Int
+  counter  Int     @default(0)
+
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@unique([schoolId, year])
+  @@index([schoolId])
 }
+
+// ==================== SCHOOL FEATURE TOGGLES ====================
+
+model SchoolFeature {
+  id        String   @id @default(uuid())
+  schoolId  String
+  featureId String
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, featureId])
+  @@index([schoolId])
+}
+
+// ==================== SYSTEM CONFIGURATION ====================
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+

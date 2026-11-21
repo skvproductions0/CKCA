@@ -15,29 +15,31 @@ interface SidebarProps {
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
-  { path: '/students', label: 'Students', icon: Users, permission: 'students' },
-  { path: '/admissions', label: 'Admissions', icon: UserPlus, permission: 'admissions' },
-  { path: '/classes', label: 'Classes & Sections', icon: School, permission: 'classes' },
-  { path: '/teachers', label: 'Teachers', icon: GraduationCap, permission: 'teachers' },
-  { path: '/subjects', label: 'Subjects', icon: BookOpen, permission: 'subjects' },
-  { path: '/fees', label: 'Fees', icon: CreditCard, permission: 'fees' },
-  { path: '/payments', label: 'Payments', icon: Wallet, permission: 'payments' },
-  { path: '/attendance', label: 'Attendance', icon: ClipboardCheck, permission: 'attendance' },
-  { path: '/examinations', label: 'Examinations', icon: FileText, permission: 'exams' },
-  { path: '/results', label: 'Results', icon: BarChart3, permission: 'results' },
-  { path: '/reports', label: 'Reports', icon: BarChart3, permission: 'reports' },
-  { path: '/notifications', label: 'Notifications', icon: Bell, permission: 'notifications' },
-  { path: '/backup', label: 'Backup & Restore', icon: Database, permission: '*' },
+  { path: '/students', label: 'Students', icon: Users, permission: 'students', featureId: 'students' },
+  { path: '/admissions', label: 'Admissions', icon: UserPlus, permission: 'admissions', featureId: 'admissions' },
+  { path: '/classes', label: 'Classes & Sections', icon: School, permission: 'classes', featureId: 'classes' },
+  { path: '/teachers', label: 'Teachers', icon: GraduationCap, permission: 'teachers', featureId: 'teachers' },
+  { path: '/subjects', label: 'Subjects', icon: BookOpen, permission: 'subjects', featureId: 'subjects' },
+  { path: '/fees', label: 'Fees', icon: CreditCard, permission: 'fees', featureId: 'fees' },
+  { path: '/payments', label: 'Payments', icon: Wallet, permission: 'payments', featureId: 'payments' },
+  { path: '/attendance', label: 'Attendance', icon: ClipboardCheck, permission: 'attendance', featureId: 'attendance' },
+  { path: '/examinations', label: 'Examinations', icon: FileText, permission: 'exams', featureId: 'examinations' },
+  { path: '/results', label: 'Results', icon: BarChart3, permission: 'results', featureId: 'results' },
+  { path: '/reports', label: 'Reports', icon: BarChart3, permission: 'reports', featureId: 'reports' },
+  { path: '/notifications', label: 'Notifications', icon: Bell, permission: 'notifications', featureId: 'notifications' },
+  { path: '/backup', label: 'Backup & Restore', icon: Database, permission: '*', featureId: 'backup' },
   { path: '/settings', label: 'Settings', icon: Settings, permission: 'settings.limited' },
 ];
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user } = useAuth();
-  const { schoolSettings } = useApp();
+  const { schoolSettings, isFeatureEnabled } = useApp();
 
-  const filteredItems = navItems.filter(item =>
-    user && hasPermission(user.role, item.permission)
-  );
+  const filteredItems = navItems.filter(item => {
+    if (!user || !hasPermission(user.role, item.permission)) return false;
+    if (item.featureId && !isFeatureEnabled(item.featureId)) return false;
+    return true;
+  });
 
   return (
     <aside className={cn(
@@ -45,15 +47,29 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       collapsed ? 'w-[70px]' : 'w-[260px]'
     )}>
       <div className="flex items-center gap-3 p-4 border-b border-white/10">
-        <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center flex-shrink-0">
-          <School className="w-6 h-6" />
+        <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm">
+          {schoolSettings?.logoPath ? (
+            <img
+              src={schoolSettings.logoPath as string}
+              alt="Logo"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                // Fallback to School icon on error
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <School className="w-6 h-6" />
+          )}
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="font-bold text-sm leading-tight truncate">
+            <h1 className="font-bold text-sm leading-tight truncate" title={(schoolSettings?.schoolName as string) || 'School Management'}>
               {(schoolSettings?.schoolName as string) || 'School Management'}
             </h1>
-            <p className="text-xs text-gray-400">Management System</p>
+            <p className="text-xs text-gray-400">
+              {(schoolSettings?.schoolCode as string) ? `Code: ${schoolSettings?.schoolCode}` : 'Management System'}
+            </p>
           </div>
         )}
       </div>

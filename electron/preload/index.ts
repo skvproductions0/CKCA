@@ -4,10 +4,82 @@ const api = {
   invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
 
   auth: {
-    login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
+    login: (username: string, password: string, schoolCode?: string) => ipcRenderer.invoke('auth:login', username, password, schoolCode),
     logout: () => ipcRenderer.invoke('auth:logout'),
     validate: (token: string) => ipcRenderer.invoke('auth:validate', token),
     createUser: (data: unknown) => ipcRenderer.invoke('auth:createUser', data),
+  },
+
+  creator: {
+    enterSchool: (schoolId: string) => ipcRenderer.invoke('creator:enterSchool', schoolId),
+    exitSchool: () => ipcRenderer.invoke('creator:exitSchool'),
+    getSessionState: () => ipcRenderer.invoke('creator:getSessionState'),
+    stats: () => ipcRenderer.invoke('creator:stats'),
+    schools: {
+      list: (filters?: unknown) => ipcRenderer.invoke('creator:schools:list', filters),
+      get: (id: string) => ipcRenderer.invoke('creator:schools:get', id),
+      create: (data: unknown) => ipcRenderer.invoke('creator:schools:create', data),
+      update: (id: string, data: unknown) => ipcRenderer.invoke('creator:schools:update', id, data),
+      suspend: (id: string, reason?: string) => ipcRenderer.invoke('creator:schools:suspend', id, reason),
+      reactivate: (id: string) => ipcRenderer.invoke('creator:schools:reactivate', id),
+      archive: (id: string, password: string) => ipcRenderer.invoke('creator:schools:archive', id, password),
+      uploadAsset: (schoolId: string, assetType: string, fileBase64: string, filename: string) =>
+        ipcRenderer.invoke('creator:schools:uploadAsset', schoolId, assetType, fileBase64, filename),
+    },
+    superAdmins: {
+      list: (filters?: unknown) => ipcRenderer.invoke('creator:superAdmins:list', filters),
+      create: (data: unknown) => ipcRenderer.invoke('creator:superAdmins:create', data),
+      resetPassword: (userId: string, newPassword: string, forceChange: boolean) =>
+        ipcRenderer.invoke('creator:superAdmins:resetPassword', userId, newPassword, forceChange),
+      toggleLock: (userId: string, lock: boolean, reason?: string) =>
+        ipcRenderer.invoke('creator:superAdmins:toggleLock', userId, lock, reason),
+      forceLogout: (userId: string) => ipcRenderer.invoke('creator:superAdmins:forceLogout', userId),
+      reassignSchool: (userId: string, newSchoolId: string) =>
+        ipcRenderer.invoke('creator:superAdmins:reassignSchool', userId, newSchoolId),
+      activity: (userId: string, limit?: number) =>
+        ipcRenderer.invoke('creator:superAdmins:activity', userId, limit),
+    },
+    features: {
+      get: (schoolId: string) => ipcRenderer.invoke('creator:features:get', schoolId),
+      toggle: (schoolId: string, featureId: string, isEnabled: boolean) =>
+        ipcRenderer.invoke('creator:features:toggle', schoolId, featureId, isEnabled),
+      applyPlan: (schoolId: string, planId: string, updateLimits: boolean) =>
+        ipcRenderer.invoke('creator:features:applyPlan', schoolId, planId, updateLimits),
+      updateLimits: (
+        schoolId: string,
+        limits: { maxStudents?: number; maxStaff?: number; licenseExpiresAt?: string | null }
+      ) => ipcRenderer.invoke('creator:features:updateLimits', schoolId, limits),
+      registry: () => ipcRenderer.invoke('creator:features:registry'),
+      presets: () => ipcRenderer.invoke('creator:features:presets'),
+    },
+    sessions: {
+      list: (schoolId: string) => ipcRenderer.invoke('creator:sessions:list', schoolId),
+      create: (schoolId: string, data: unknown) => ipcRenderer.invoke('creator:sessions:create', schoolId, data),
+      setActive: (id: string, schoolId: string) => ipcRenderer.invoke('creator:sessions:setActive', id, schoolId),
+      previewRollover: (sourceId: string, targetId: string, schoolId: string) =>
+        ipcRenderer.invoke('creator:sessions:rollover:preview', sourceId, targetId, schoolId),
+      executeRollover: (options: unknown, schoolId: string) =>
+        ipcRenderer.invoke('creator:sessions:rollover:execute', options, schoolId),
+    },
+    system: {
+      getSettings: () => ipcRenderer.invoke('creator:system:settings:get'),
+      updateSettings: (data: unknown) => ipcRenderer.invoke('creator:system:settings:update', data),
+    },
+    activeUsers: {
+      list: (filters?: unknown) => ipcRenderer.invoke('creator:activeUsers:list', filters),
+      forceLogoutSession: (sessionId: string) => ipcRenderer.invoke('creator:activeUsers:forceLogoutSession', sessionId),
+      forceLogoutUser: (userId: string) => ipcRenderer.invoke('creator:activeUsers:forceLogoutUser', userId),
+      forceLogoutSchool: (schoolId: string) => ipcRenderer.invoke('creator:activeUsers:forceLogoutSchool', schoolId),
+    },
+    audit: {
+      list: (filters?: unknown) => ipcRenderer.invoke('creator:audit:list', filters),
+    },
+    backup: {
+      list: () => ipcRenderer.invoke('creator:backup:list'),
+      create: (label?: string) => ipcRenderer.invoke('creator:backup:create', label),
+      restore: (filePath: string, password: string) => ipcRenderer.invoke('creator:backup:restore', filePath, password),
+    },
+    enhancedStats: () => ipcRenderer.invoke('creator:stats:enhanced'),
   },
 
   dashboard: {
@@ -39,9 +111,14 @@ const api = {
 
   academicYears: {
     list: () => ipcRenderer.invoke('academicYears:list'),
+    listWithStats: () => ipcRenderer.invoke('academicYears:listWithStats'),
     current: () => ipcRenderer.invoke('academicYears:current'),
     setCurrent: (id: string) => ipcRenderer.invoke('academicYears:setCurrent', id),
     create: (data: unknown) => ipcRenderer.invoke('academicYears:create', data),
+    previewRollover: (sourceId: string, targetId: string) =>
+      ipcRenderer.invoke('academicYears:rollover:preview', sourceId, targetId),
+    executeRollover: (options: unknown) =>
+      ipcRenderer.invoke('academicYears:rollover:execute', options),
   },
 
   teachers: {

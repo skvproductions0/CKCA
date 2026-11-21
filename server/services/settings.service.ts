@@ -1,15 +1,77 @@
 import { getPrismaClient } from '../database/client';
 import { createAuditLog } from './auth.service';
 import { getErrorMessage } from '../utils/helpers';
+import { checkSchoolLimits, getEffectiveSchoolFeatures } from './feature.service';
 
-export async function getSchoolSettings() {
+export async function getSchoolSettings(schoolId?: string) {
   const db = getPrismaClient();
-  return db.schoolSetting.findFirst();
+  let settings = schoolId
+    ? await db.schoolSetting.findFirst({ where: { schoolId } })
+    : await db.schoolSetting.findFirst();
+
+  if (!settings && schoolId) {
+    const school = await db.school.findUnique({ where: { id: schoolId } });
+    if (school) {
+      settings = await db.schoolSetting.create({
+        data: {
+          schoolId,
+          schoolName: school.name,
+          address: school.address,
+          phone: school.phone,
+          email: school.email,
+          website: school.website,
+          principalName: school.principalName,
+          logoPath: school.logoPath,
+        },
+      });
+    }
+  }
+
+  if (!settings) {
+    settings = await db.schoolSetting.findFirst();
+  }
+
+  if (settings && (schoolId || settings.schoolId)) {
+    const targetSchoolId = schoolId || settings.schoolId;
+    if (targetSchoolId) {
+      const school = await db.school.findUnique({ where: { id: targetSchoolId } });
+      if (school) {
+        let featureDetails: any = null;
+        try {
+          featureDetails = await getEffectiveSchoolFeatures(targetSchoolId);
+        } catch {}
+        return {
+          ...settings,
+          schoolName: school.name || settings.schoolName,
+          schoolCode: school.code,
+          primaryColor: school.primaryColor,
+          secondaryColor: school.secondaryColor,
+          logoPath: school.logoPath || settings.logoPath,
+          faviconPath: school.faviconPath,
+          signaturePath: school.signaturePath,
+          stampPath: school.stampPath,
+          board: school.board,
+          affiliationNumber: school.affiliationNumber,
+          plan: school.plan || 'PREMIUM',
+          features: featureDetails?.features || {},
+          maxStudents: school.maxStudents,
+          maxStaff: school.maxStaff,
+          licenseExpiresAt: school.licenseExpiresAt,
+          licenseWarning: featureDetails?.licenseWarning || null,
+        };
+      }
+    }
+  }
+
+  return settings;
 }
 
-export async function updateSchoolSettings(data: Record<string, unknown>, userId: string) {
+export async function updateSchoolSettings(data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
-  const existing = await db.schoolSetting.findFirst();
+  const existing = schoolId
+    ? await db.schoolSetting.findFirst({ where: { schoolId } })
+    : await db.schoolSetting.findFirst();
+
   if (!existing) throw new Error('School settings not found.');
 
   type SchoolSettingUpdateInput = Parameters<typeof db.schoolSetting.update>[0]['data'];
@@ -18,25 +80,75 @@ export async function updateSchoolSettings(data: Record<string, unknown>, userId
     where: { id: existing.id },
     data: payload,
   });
-  await createAuditLog(userId, 'SETTINGS_UPDATED', 'SchoolSetting', settings.id, 'School settings updated');
+
+  const targetSchoolId = schoolId || existing.schoolId;
+  if (targetSchoolId) {
+    const schoolUpdates: Record<string, any> = {};
+    if (data.schoolName) schoolUpdates.name = data.schoolName as string;
+    if (data.address !== undefined) schoolUpdates.address = data.address as string;
+    if (data.phone !== undefined) schoolUpdates.phone = data.phone as string;
+    if (data.email !== undefined) schoolUpdates.email = data.email as string;
+    if (data.website !== undefined) schoolUpdates.website = data.website as string;
+    if (data.principalName !== undefined) schoolUpdates.principalName = data.principalName as string;
+    if (data.logoPath !== undefined) schoolUpdates.logoPath = data.logoPath as string;
+    if (data.primaryColor !== undefined) schoolUpdates.primaryColor = data.primaryColor as string;
+    if (data.secondaryColor !== undefined) schoolUpdates.secondaryColor = data.secondaryColor as string;
+
+    if (Object.keys(schoolUpdates).length > 0) {
+      await db.school.update({
+        where: { id: targetSchoolId },
+        data: schoolUpdates,
+      });
+    }
+  }
+
+  await createAuditLog(userId, 'SETTINGS_UPDATED', 'SchoolSetting', settings.id, 'School settings updated', targetSchoolId);
   return settings;
 }
 
-export async function getUsers() {
+export async function getUsers(schoolId?: string) {
   const db = getPrismaClient();
   const users = await db.user.findMany({
-    where: { deletedAt: null },
+    where: {
+      deletedAt: null,
+      role: { not: 'CREATOR' },
+      ...(schoolId ? { schoolId } : {}),
+    },
     select: {
       id: true, username: true, email: true, fullName: true,
       role: true, isActive: true, lastLoginAt: true, createdAt: true,
+      schoolId: true,
     },
     orderBy: { createdAt: 'desc' },
   });
   return users;
 }
 
-export async function updateUser(id: string, data: Record<string, unknown>, userId: string) {
+export async function updateUser(id: string, data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
+
+  const targetUser = await db.user.findUnique({ where: { id } });
+  if (!targetUser) throw new Error('User not found.');
+
+  // Multi-school protection: Ensure user belongs to this school
+  if (schoolId && targetUser.schoolId && targetUser.schoolId !== schoolId) {
+    throw new Error('Access denied. You cannot modify users from another school.');
+  }
+
+  // Creator account cannot be edited, deleted, or locked by any other user
+  if (targetUser.role === 'CREATOR') {
+    if (userId !== id) {
+      throw new Error('Creator account cannot be edited, locked, or deleted by any other user.');
+    }
+    if (data.isActive === false) {
+      throw new Error('Creator account cannot be deactivated or locked.');
+    }
+  }
+
+  if (data.role === 'CREATOR' && targetUser.role !== 'CREATOR') {
+    throw new Error('Creator role cannot be assigned through user management.');
+  }
+
   type UserUpdateInput = Parameters<typeof db.user.update>[0]['data'];
   const payload = data as UserUpdateInput;
   const user = await db.user.update({
@@ -51,13 +163,16 @@ export async function updateUser(id: string, data: Record<string, unknown>, user
   return user;
 }
 
-export async function getAuditLogs(filters: { page?: number; limit?: number; action?: string } = {}) {
+export async function getAuditLogs(filters: { page?: number; limit?: number; action?: string; schoolId?: string } = {}, schoolId?: string) {
   const db = getPrismaClient();
   const page = filters.page || 1;
   const limit = filters.limit || 50;
   const skip = (page - 1) * limit;
 
-  const where = filters.action ? { action: { contains: filters.action } } : {};
+  const targetSchoolId = schoolId || filters.schoolId;
+  const where: Record<string, any> = {};
+  if (targetSchoolId) where.schoolId = targetSchoolId;
+  if (filters.action) where.action = { contains: filters.action };
 
   const [logs, total] = await Promise.all([
     db.auditLog.findMany({
@@ -73,10 +188,17 @@ export async function getAuditLogs(filters: { page?: number; limit?: number; act
   return { logs, total, page, totalPages: Math.ceil(total / limit) };
 }
 
-export async function getNotifications(userId?: string) {
+export async function getNotifications(userId?: string, schoolId?: string) {
   const db = getPrismaClient();
+  const where: Record<string, any> = {};
+  if (userId) {
+    where.OR = [{ userId }, { userId: null }];
+  }
+  if (schoolId) {
+    where.schoolId = schoolId;
+  }
   return db.notification.findMany({
-    where: userId ? { OR: [{ userId }, { userId: null }] } : {},
+    where,
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
@@ -93,6 +215,7 @@ export async function createNotification(data: {
   type?: string;
   userId?: string;
   link?: string;
+  schoolId?: string;
 }) {
   const db = getPrismaClient();
   return db.notification.create({
@@ -102,17 +225,20 @@ export async function createNotification(data: {
       type: (data.type || 'INFO') as 'INFO' | 'WARNING' | 'SUCCESS' | 'ERROR',
       userId: data.userId,
       link: data.link,
+      schoolId: data.schoolId || null,
     },
   });
 }
 
-export async function getAdmissions(filters: { status?: string; academicYearId?: string; page?: number; limit?: number } = {}) {
+export async function getAdmissions(filters: { status?: string; academicYearId?: string; page?: number; limit?: number; schoolId?: string } = {}, schoolId?: string) {
   const db = getPrismaClient();
   const page = filters.page || 1;
   const limit = filters.limit || 20;
   const skip = (page - 1) * limit;
 
+  const targetSchoolId = schoolId || filters.schoolId;
   const where: Record<string, unknown> = {};
+  if (targetSchoolId) where.schoolId = targetSchoolId;
   if (filters.status) where.status = filters.status;
   if (filters.academicYearId) where.academicYearId = filters.academicYearId;
 
@@ -130,23 +256,46 @@ export async function getAdmissions(filters: { status?: string; academicYearId?:
   return { admissions, total, page, totalPages: Math.ceil(total / limit) };
 }
 
-export async function createAdmission(data: Record<string, unknown>, userId: string) {
+export async function createAdmission(data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
   try {
+    const targetSchoolId = schoolId || (data.schoolId as string) || null;
+    if (targetSchoolId) {
+      await checkSchoolLimits(targetSchoolId, 'STUDENT');
+    }
     const year = new Date().getFullYear();
-    let counter = await db.admissionCounter.findUnique({ where: { year } });
+    let counter = await db.admissionCounter.findFirst({
+      where: { year, ...(targetSchoolId ? { schoolId: targetSchoolId } : {}) },
+    });
     if (!counter) {
-      counter = await db.admissionCounter.create({ data: { year, counter: 0 } });
+      counter = await db.admissionCounter.create({ data: { year, counter: 0, schoolId: targetSchoolId } });
     }
     const newCounter = counter.counter + 1;
-    await db.admissionCounter.update({ where: { year }, data: { counter: newCounter } });
+    await db.admissionCounter.update({ where: { id: counter.id }, data: { counter: newCounter } });
 
     const admissionNumber = `ADM-${year}-${String(newCounter).padStart(4, '0')}`;
 
-    type AdmissionCreateInput = Parameters<typeof db.admission.create>[0]['data'];
     // build create data and use `student.connect` when studentId provided
     const raw = data as Record<string, any>;
-    const createData: Record<string, any> = { ...raw, admissionNumber };
+    let academicYearId = raw.academicYearId;
+    if (!academicYearId) {
+      const fallbackYear = (await db.academicYear.findFirst({
+        where: {
+          isCurrent: true,
+          ...(targetSchoolId ? { schoolId: targetSchoolId } : {}),
+        },
+      })) || (await db.academicYear.findFirst({
+        where: targetSchoolId ? { schoolId: targetSchoolId } : {},
+      }));
+      academicYearId = fallbackYear?.id;
+    }
+
+    const createData: Record<string, any> = {
+      ...raw,
+      admissionNumber,
+      schoolId: targetSchoolId,
+      ...(academicYearId ? { academicYearId } : {}),
+    };
     if (raw.studentId) {
       createData.studentId = raw.studentId;
     }
@@ -159,19 +308,24 @@ export async function createAdmission(data: Record<string, unknown>, userId: str
       title: 'New Admission',
       message: `New admission application: ${admission.name}`,
       type: 'ADMISSION',
+      schoolId: targetSchoolId || undefined,
     });
 
-    await createAuditLog(userId, 'ADMISSION_CREATED', 'Admission', admission.id, admission.name);
+    await createAuditLog(userId, 'ADMISSION_CREATED', 'Admission', admission.id, admission.name, targetSchoolId);
     return admission;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
 }
 
-export async function createAdmissionWizard(data: Record<string, unknown>, userId: string) {
+export async function createAdmissionWizard(data: Record<string, unknown>, userId: string, schoolId?: string) {
   const db = getPrismaClient();
 
   const payload = data as Record<string, unknown>;
+  const targetSchoolId = schoolId || (payload.schoolId as string) || null;
+  if (targetSchoolId) {
+    await checkSchoolLimits(targetSchoolId, 'STUDENT');
+  }
   const details = (payload.details as Record<string, unknown>) || {};
   const parent = (payload.parent as Record<string, unknown>) || {};
   const academic = (payload.academic as Record<string, unknown>) || {};
@@ -181,12 +335,14 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
   const draft = Boolean(payload.draft);
 
   const year = new Date().getFullYear();
-  let counter = await db.admissionCounter.findUnique({ where: { year } });
+  let counter = await db.admissionCounter.findFirst({
+    where: { year, ...(targetSchoolId ? { schoolId: targetSchoolId } : {}) },
+  });
   if (!counter) {
-    counter = await db.admissionCounter.create({ data: { year, counter: 0 } });
+    counter = await db.admissionCounter.create({ data: { year, counter: 0, schoolId: targetSchoolId } });
   }
   const newCounter = counter.counter + 1;
-  await db.admissionCounter.update({ where: { year }, data: { counter: newCounter } });
+  await db.admissionCounter.update({ where: { id: counter.id }, data: { counter: newCounter } });
 
   const admissionNumber = `ADM-${year}-${String(newCounter).padStart(4, '0')}`;
 
@@ -197,7 +353,14 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
     if (!exists) academicYearId = null;
   }
   if (!academicYearId) {
-    const fallbackYear = (await db.academicYear.findFirst({ where: { isCurrent: true } })) || (await db.academicYear.findFirst());
+    const fallbackYear = (await db.academicYear.findFirst({
+      where: {
+        isCurrent: true,
+        ...(targetSchoolId ? { schoolId: targetSchoolId } : {}),
+      },
+    })) || (await db.academicYear.findFirst({
+      where: targetSchoolId ? { schoolId: targetSchoolId } : {},
+    }));
     if (fallbackYear) {
       academicYearId = fallbackYear.id;
     } else {
@@ -224,6 +387,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
   }
 
   const admissionData = {
+    schoolId: targetSchoolId,
     academicYearId,
     admissionNumber,
     name: details.fullName as string,
@@ -273,6 +437,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
       });
       const student = await tx.student.create({
         data: {
+          schoolId: targetSchoolId,
           studentId: `STU-${year}-${String(newCounter).padStart(4, '0')}`,
           admissionNumber,
           name: details.fullName as string,
@@ -327,6 +492,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
     if (!draft && details.photoPath) {
       await tx.document.create({
         data: {
+          schoolId: targetSchoolId,
           studentId: studentId as string,
           name: 'Student Photo',
           type: 'PHOTO',
@@ -342,6 +508,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
       if (!pathValue || draft) continue;
       await tx.document.create({
         data: {
+          schoolId: targetSchoolId,
           studentId: studentId as string,
           name: (doc.name as string) || 'Document',
           type: (doc.type as string) || 'OTHER',
@@ -361,6 +528,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
 
       await tx.studentFee.create({
         data: {
+          schoolId: targetSchoolId,
           studentId: studentId as string,
           academicYearId,
           totalPaise,
@@ -384,6 +552,7 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
 
         await tx.feePayment.create({
           data: {
+            schoolId: targetSchoolId,
             receiptNumber: `RCPT-${year}-${String(newCounter).padStart(4, '0')}`,
             studentId: studentId as string,
             academicYearId,
@@ -404,26 +573,36 @@ export async function createAdmissionWizard(data: Record<string, unknown>, userI
     return admission;
   });
 
-  await createAuditLog(userId, draft ? 'ADMISSION_DRAFT_CREATED' : 'ADMISSION_CREATED', 'Admission', result.id, result.name);
+  await createAuditLog(userId, draft ? 'ADMISSION_DRAFT_CREATED' : 'ADMISSION_CREATED', 'Admission', result.id, result.name, targetSchoolId);
   return result;
 }
 
-export async function saveAdmissionDraft(data: Record<string, unknown>, userId: string) {
-  return createAdmissionWizard({ ...data, draft: true }, userId);
+export async function saveAdmissionDraft(data: Record<string, unknown>, userId: string, schoolId?: string) {
+  return createAdmissionWizard({ ...data, draft: true }, userId, schoolId);
 }
 
-export async function approveAdmission(id: string, userId: string) {
+export async function approveAdmission(id: string, userId: string, schoolId?: string) {
   const db = getPrismaClient();
   const admission = await db.admission.findUnique({ where: { id } });
   if (!admission) throw new Error('Admission not found.');
+  if (schoolId && admission.schoolId && admission.schoolId !== schoolId) {
+    throw new Error('Access denied. Admission belongs to another school.');
+  }
+
+  const targetSchoolId = schoolId || admission.schoolId || null;
+  if (targetSchoolId) {
+    await checkSchoolLimits(targetSchoolId, 'STUDENT');
+  }
 
   const year = new Date().getFullYear();
-  let counter = await db.admissionCounter.findUnique({ where: { year } });
+  let counter = await db.admissionCounter.findFirst({
+    where: { year, ...(targetSchoolId ? { schoolId: targetSchoolId } : {}) },
+  });
   if (!counter) {
-    counter = await db.admissionCounter.create({ data: { year, counter: 0 } });
+    counter = await db.admissionCounter.create({ data: { year, counter: 0, schoolId: targetSchoolId } });
   }
   const newCounter = counter.counter + 1;
-  await db.admissionCounter.update({ where: { year }, data: { counter: newCounter } });
+  await db.admissionCounter.update({ where: { id: counter.id }, data: { counter: newCounter } });
 
   const cleanClassId = (admission.classId && admission.classId.trim()) ? admission.classId.trim() : null;
   let finalClassId: string | null = null;
@@ -446,12 +625,20 @@ export async function approveAdmission(id: string, userId: string) {
     if (exists) finalAcademicYearId = exists.id;
   }
   if (!finalAcademicYearId) {
-    const fallback = (await db.academicYear.findFirst({ where: { isCurrent: true } })) || (await db.academicYear.findFirst());
+    const fallback = (await db.academicYear.findFirst({
+      where: {
+        isCurrent: true,
+        ...(targetSchoolId ? { schoolId: targetSchoolId } : {}),
+      },
+    })) || (await db.academicYear.findFirst({
+      where: targetSchoolId ? { schoolId: targetSchoolId } : {},
+    }));
     finalAcademicYearId = fallback?.id || null;
   }
 
   const student = await db.student.create({
     data: {
+      schoolId: targetSchoolId,
       studentId: `STU-${year}-${String(newCounter).padStart(4, '0')}`,
       admissionNumber: admission.admissionNumber,
       name: admission.name,
@@ -502,6 +689,6 @@ export async function approveAdmission(id: string, userId: string) {
     },
   });
 
-  await createAuditLog(userId, 'ADMISSION_APPROVED', 'Admission', id, `Enrolled: ${student.name}`);
+  await createAuditLog(userId, 'ADMISSION_APPROVED', 'Admission', id, `Enrolled: ${student.name}`, targetSchoolId);
   return student;
 }

@@ -11,7 +11,7 @@ interface TopNavProps {
 
 export function TopNav({ sidebarCollapsed }: TopNavProps) {
   const { user, logout } = useAuth();
-  const { academicYear, academicYears, setAcademicYear, darkMode, toggleDarkMode } = useApp();
+  const { academicYear, academicYears, setAcademicYear, darkMode, toggleDarkMode, schoolSettings } = useApp();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -36,27 +36,48 @@ export function TopNav({ sidebarCollapsed }: TopNavProps) {
     const year = academicYears.find(y => y.id === yearId);
     if (year) {
       setAcademicYear({ id: year.id, name: year.name });
-      if (user?.role === 'SUPER_ADMIN') {
-        await apiCall(() => window.api.academicYears.setCurrent(yearId));
-      }
     }
   };
+
+  const activeYear = academicYears.find(y => y.isCurrent);
+  const isViewingHistorical = academicYear && activeYear && academicYear.id !== activeYear.id;
 
   return (
     <header className={`fixed top-0 right-0 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-30 flex items-center justify-between px-6 transition-all duration-300 ${sidebarCollapsed ? 'left-[70px]' : 'left-[260px]'}`}>
       <div className="flex items-center gap-4">
+        {schoolSettings?.schoolName && (
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            <span className="truncate max-w-[220px]">{schoolSettings.schoolName as string}</span>
+            {Boolean(schoolSettings.schoolCode) && (
+              <span className="opacity-75 font-mono">({schoolSettings.schoolCode as string})</span>
+            )}
+          </div>
+        )}
+
         {academicYears.length > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Academic Year:</span>
+            <span className="text-sm font-medium text-gray-500 hidden lg:inline">Session:</span>
             <select
               value={academicYear?.id || ''}
               onChange={e => handleYearChange(e.target.value)}
-              className="input py-1.5 px-3 w-auto text-sm"
+              className="input py-1 px-2.5 w-auto text-xs font-semibold cursor-pointer"
             >
               {academicYears.map(y => (
-                <option key={y.id} value={y.id}>{y.name}</option>
+                <option key={y.id} value={y.id}>
+                  {y.name} {y.isCurrent ? '★ (Active)' : '(Closed)'}
+                </option>
               ))}
             </select>
+            {isViewingHistorical ? (
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1 shadow-sm">
+                Historical (Read-Only)
+              </span>
+            ) : (
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hidden sm:inline shadow-sm">
+                Active Session
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -2,6 +2,24 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { formatCurrency, formatDate, numberToWords } from "./helpers";
 
+function hexToRgb(hex?: string): [number, number, number] {
+  if (!hex || !hex.startsWith('#')) return [37, 99, 235];
+  const clean = hex.replace('#', '');
+  if (clean.length === 3) {
+    const r = parseInt(clean[0] + clean[0], 16);
+    const g = parseInt(clean[1] + clean[1], 16);
+    const b = parseInt(clean[2] + clean[2], 16);
+    return [r, g, b];
+  }
+  if (clean.length === 6) {
+    const r = parseInt(clean.substring(0, 2), 16);
+    const g = parseInt(clean.substring(2, 4), 16);
+    const b = parseInt(clean.substring(4, 6), 16);
+    return [r, g, b];
+  }
+  return [37, 99, 235];
+}
+
 export async function generateReceiptPDF(
   payment: Record<string, unknown>,
   settings: Record<string, string | boolean | null> | null,
@@ -15,26 +33,45 @@ export async function generateReceiptPDF(
   };
   const schoolName = (settings?.schoolName as string) || "CK CAREER ACADEMY";
   const amountRupees = (payment.amountPaise as number) / 100;
+  const primaryRgb = hexToRgb(settings?.primaryColor as string);
 
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text(schoolName.toUpperCase(), 105, 20, { align: "center" });
+  doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+  doc.text(schoolName.toUpperCase(), 105, 18, { align: "center" });
 
-  doc.setFontSize(10);
+  doc.setTextColor(80, 80, 80);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  if (settings?.address)
-    doc.text(settings.address as string, 105, 28, { align: "center" });
-  if (settings?.phone)
-    doc.text(`Phone: ${settings.phone}`, 105, 34, { align: "center" });
+  let subY = 24;
 
-  doc.setFontSize(14);
+  if (settings?.reportHeader) {
+    doc.text(settings.reportHeader as string, 105, subY, { align: "center" });
+    subY += 5;
+  }
+  if (settings?.address) {
+    doc.text(settings.address as string, 105, subY, { align: "center" });
+    subY += 5;
+  }
+  const contactParts: string[] = [];
+  if (settings?.phone) contactParts.push(`Phone: ${settings.phone}`);
+  if (settings?.email) contactParts.push(`Email: ${settings.email}`);
+  if (settings?.affiliationNumber) contactParts.push(`${settings.board || 'Affiliation'}: ${settings.affiliationNumber}`);
+  if (contactParts.length > 0) {
+    doc.text(contactParts.join(' | '), 105, subY, { align: "center" });
+    subY += 5;
+  }
+
+  doc.setTextColor(20, 20, 20);
+  doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text("FEE PAYMENT RECEIPT", 105, 48, { align: "center" });
+  doc.text("FEE PAYMENT RECEIPT", 105, subY + 6, { align: "center" });
 
-  doc.setDrawColor(200);
-  doc.line(20, 52, 190, 52);
+  doc.setDrawColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
+  doc.setLineWidth(0.8);
+  doc.line(20, subY + 10, 190, subY + 10);
 
-  let y = 62;
+  let y = subY + 18;
   const leftCol = 25;
   const rightCol = 120;
 
@@ -67,14 +104,22 @@ export async function generateReceiptPDF(
   doc.text(`Amount in words: ${numberToWords(amountRupees)}`, leftCol, y);
 
   y += 20;
+  doc.setDrawColor(200);
+  doc.setLineWidth(0.3);
   doc.line(20, y, 190, y);
   y += 10;
   doc.setFont("helvetica", "normal");
   doc.text("Authorized Signature", 150, y);
-
-  if (settings?.receiptFooter) {
+  if (settings?.principalName) {
     doc.setFontSize(8);
-    doc.text(settings.receiptFooter as string, 105, 280, { align: "center" });
+    doc.text(`Principal: ${settings.principalName}`, 25, y);
+  }
+
+  const footerText = (settings?.reportFooter as string) || (settings?.receiptFooter as string);
+  if (footerText) {
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(footerText, 105, 280, { align: "center" });
   }
 
   doc.save(`receipt-${payment.receiptNumber}.pdf`);
@@ -91,16 +136,34 @@ export async function generateReportCardPDF(
   const schoolName = (settings?.schoolName as string) || "CK CAREER ACADEMY";
   const cls = student.class as { name: string } | undefined;
   const sec = student.section as { name: string } | undefined;
+  const primaryRgb = hexToRgb(settings?.primaryColor as string);
 
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
+  doc.setTextColor(primaryRgb[0], primaryRgb[1], primaryRgb[2]);
   doc.text(schoolName.toUpperCase(), 105, 15, { align: "center" });
+
+  let curY = 21;
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(80, 80, 80);
+  if (settings?.reportHeader) {
+    doc.text(settings.reportHeader as string, 105, curY, { align: "center" });
+    curY += 5;
+  }
+  if (settings?.address) {
+    doc.text(settings.address as string, 105, curY, { align: "center" });
+    curY += 5;
+  }
+
+  doc.setTextColor(20, 20, 20);
   doc.setFontSize(12);
-  doc.text("REPORT CARD", 105, 24, { align: "center" });
+  doc.setFont("helvetica", "bold");
+  doc.text("REPORT CARD", 105, curY + 4, { align: "center" });
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  let y = 35;
+  let y = curY + 14;
   doc.text(`Name: ${student.name}`, 20, y);
   doc.text(`Admission No: ${student.admissionNumber}`, 120, y);
   y += 7;
@@ -124,7 +187,7 @@ export async function generateReportCardPDF(
     head: [["Subject", "Max Marks", "Obtained", "Grade"]],
     body: tableData,
     theme: "grid",
-    headStyles: { fillColor: [37, 99, 235] },
+    headStyles: { fillColor: primaryRgb },
   });
 
   y =
@@ -135,12 +198,24 @@ export async function generateReportCardPDF(
   doc.text(`Grade: ${summary.grade}`, 20, y + 14);
   doc.text(`Result: ${summary.result}`, 20, y + 21);
 
-  y += 30;
+  y += 25;
   doc.text(
     `Attendance: ${attendance.present}/${attendance.workingDays} (${attendance.percentage}%)`,
     20,
     y,
   );
+
+  y += 15;
+  doc.setFontSize(9);
+  doc.text(`Principal: ${settings?.principalName || 'Principal'}`, 20, y);
+  doc.text("Class Teacher Signature", 140, y);
+
+  const footerText = (settings?.reportFooter as string) || (settings?.reportCardFooter as string);
+  if (footerText) {
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(footerText, 105, 280, { align: "center" });
+  }
 
   doc.save(`report-card-${student.admissionNumber}.pdf`);
 }

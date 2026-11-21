@@ -1,7 +1,7 @@
 import { getPrismaClient } from '../database/client';
 import { startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
 
-export async function getDashboardStats(academicYearId?: string) {
+export async function getDashboardStats(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const today = new Date();
   const dayStart = startOfDay(today);
@@ -10,6 +10,8 @@ export async function getDashboardStats(academicYearId?: string) {
   const monthEnd = endOfMonth(today);
 
   const yearFilter = academicYearId ? { academicYearId } : {};
+  const schoolFilter = schoolId ? { schoolId } : {};
+  const baseFilter = { ...yearFilter, ...schoolFilter };
 
   const [
     totalStudents,
@@ -28,36 +30,36 @@ export async function getDashboardStats(academicYearId?: string) {
     classDistribution,
     examPerformance,
   ] = await Promise.all([
-    db.student.count({ where: { status: 'ACTIVE', deletedAt: null, ...yearFilter } }),
-    db.teacher.count({ where: { status: 'ACTIVE', deletedAt: null } }),
-    db.class.count({ where: { isActive: true, deletedAt: null } }),
-    getTodayAttendanceStats(dayStart, dayEnd, academicYearId),
+    db.student.count({ where: { status: 'ACTIVE', deletedAt: null, ...baseFilter } }),
+    db.teacher.count({ where: { status: 'ACTIVE', deletedAt: null, ...schoolFilter } }),
+    db.class.count({ where: { isActive: true, deletedAt: null, ...schoolFilter } }),
+    getTodayAttendanceStats(dayStart, dayEnd, academicYearId, schoolId),
     db.feePayment.aggregate({
-      where: { paymentDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED', ...yearFilter },
+      where: { paymentDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED', ...baseFilter },
       _sum: { amountPaise: true },
     }),
     db.feePayment.aggregate({
-      where: { paymentDate: { gte: monthStart, lte: monthEnd }, status: 'COMPLETED', ...yearFilter },
+      where: { paymentDate: { gte: monthStart, lte: monthEnd }, status: 'COMPLETED', ...baseFilter },
       _sum: { amountPaise: true },
     }),
     db.studentFee.aggregate({
-      where: yearFilter,
+      where: baseFilter,
       _sum: { totalPaise: true, paidPaise: true },
     }),
-    db.admission.count({ where: { ...yearFilter } }),
+    db.admission.count({ where: { ...baseFilter } }),
     db.feePayment.findMany({
-      where: { status: 'COMPLETED', ...yearFilter },
+      where: { status: 'COMPLETED', ...baseFilter },
       include: { student: { select: { name: true, admissionNumber: true } } },
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
     db.admission.findMany({
-      where: yearFilter,
+      where: baseFilter,
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
     db.result.findMany({
-      where: yearFilter,
+      where: baseFilter,
       include: {
         student: { select: { name: true } },
         exam: { select: { name: true } },
@@ -66,10 +68,10 @@ export async function getDashboardStats(academicYearId?: string) {
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
-    getMonthlyFeeChart(academicYearId),
-    getAttendanceChart(academicYearId),
-    getClassDistribution(academicYearId),
-    getExamPerformance(academicYearId),
+    getMonthlyFeeChart(academicYearId, schoolId),
+    getAttendanceChart(academicYearId, schoolId),
+    getClassDistribution(academicYearId, schoolId),
+    getExamPerformance(academicYearId, schoolId),
   ]);
 
   const pendingPaise = (pendingFees._sum.totalPaise || 0) - (pendingFees._sum.paidPaise || 0);
@@ -99,18 +101,19 @@ export async function getDashboardStats(academicYearId?: string) {
   };
 }
 
-async function getTodayAttendanceStats(dayStart: Date, dayEnd: Date, academicYearId?: string) {
+async function getTodayAttendanceStats(dayStart: Date, dayEnd: Date, academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const where = {
     date: { gte: dayStart, lte: dayEnd },
     ...(academicYearId ? { academicYearId } : {}),
+    ...(schoolId ? { schoolId } : {}),
   };
   const total = await db.attendance.count({ where });
   const present = await db.attendance.count({ where: { ...where, status: 'PRESENT' } });
   return { total, present, percent: total > 0 ? Math.round((present / total) * 1000) / 10 : 0 };
 }
 
-async function getMonthlyFeeChart(academicYearId?: string) {
+async function getMonthlyFeeChart(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const year = new Date().getFullYear();
@@ -124,6 +127,7 @@ async function getMonthlyFeeChart(academicYearId?: string) {
         paymentDate: { gte: start, lte: end },
         status: 'COMPLETED',
         ...(academicYearId ? { academicYearId } : {}),
+        ...(schoolId ? { schoolId } : {}),
       },
       _sum: { amountPaise: true },
     });
@@ -132,7 +136,7 @@ async function getMonthlyFeeChart(academicYearId?: string) {
   return data;
 }
 
-async function getAttendanceChart(academicYearId?: string) {
+async function getAttendanceChart(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
   const year = new Date().getFullYear();
@@ -144,6 +148,7 @@ async function getAttendanceChart(academicYearId?: string) {
     const where = {
       date: { gte: start, lte: end },
       ...(academicYearId ? { academicYearId } : {}),
+      ...(schoolId ? { schoolId } : {}),
     };
     const total = await db.attendance.count({ where });
     const present = await db.attendance.count({ where: { ...where, status: 'PRESENT' } });
@@ -155,10 +160,14 @@ async function getAttendanceChart(academicYearId?: string) {
   return data;
 }
 
-async function getClassDistribution(academicYearId?: string) {
+async function getClassDistribution(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const classes = await db.class.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: {
+      isActive: true,
+      deletedAt: null,
+      ...(schoolId ? { schoolId } : {}),
+    },
     orderBy: { numericOrder: 'asc' },
   });
 
@@ -170,6 +179,7 @@ async function getClassDistribution(academicYearId?: string) {
           status: 'ACTIVE',
           deletedAt: null,
           ...(academicYearId ? { academicYearId } : {}),
+          ...(schoolId ? { schoolId } : {}),
         },
       });
       return { name: cls.name, students: count };
@@ -178,17 +188,22 @@ async function getClassDistribution(academicYearId?: string) {
   return data.filter(d => d.students > 0);
 }
 
-async function getExamPerformance(academicYearId?: string) {
+async function getExamPerformance(academicYearId?: string, schoolId?: string) {
   const db = getPrismaClient();
   const exams = await db.exam.findMany({
-    where: { ...(academicYearId ? { academicYearId } : {}) },
+    where: {
+      ...(academicYearId ? { academicYearId } : {}),
+      ...(schoolId ? { schoolId } : {}),
+    },
     take: 5,
     orderBy: { createdAt: 'desc' },
   });
 
   const data = await Promise.all(
     exams.map(async (exam) => {
-      const results = await db.result.findMany({ where: { examId: exam.id } });
+      const results = await db.result.findMany({
+        where: { examId: exam.id, ...(schoolId ? { schoolId } : {}) },
+      });
       const avg = results.length > 0
         ? results.reduce((sum, r) => sum + (r.percentage || 0), 0) / results.length
         : 0;

@@ -6,12 +6,27 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
+  // Default School
+  const defaultSchool = await prisma.school.upsert({
+    where: { code: "CKCA01" },
+    update: {},
+    create: {
+      id: "school_ckca_default",
+      name: "CK CAREER ACADEMY",
+      code: "CKCA01",
+      shortCode: "CKCA",
+      status: "ACTIVE",
+    },
+  });
+  const defaultSchoolId = defaultSchool.id;
+
   // School Settings
   await prisma.schoolSetting.upsert({
     where: { id: "default" },
     update: {},
     create: {
       id: "default",
+      schoolId: defaultSchoolId,
       schoolName: "CK CAREER ACADEMY",
       address: "123 Education Lane, Knowledge City, State - 110001",
       phone: "+91 98765 43210",
@@ -104,9 +119,10 @@ async function main() {
 
   // Academic Years
   const ay2025 = await prisma.academicYear.upsert({
-    where: { name: "2025-26" },
+    where: { schoolId_name: { schoolId: defaultSchoolId, name: "2025-26" } },
     update: {},
     create: {
+      schoolId: defaultSchoolId,
       name: "2025-26",
       startDate: new Date("2025-04-01"),
       endDate: new Date("2026-03-31"),
@@ -115,9 +131,10 @@ async function main() {
   });
 
   await prisma.academicYear.upsert({
-    where: { name: "2026-27" },
+    where: { schoolId_name: { schoolId: defaultSchoolId, name: "2026-27" } },
     update: {},
     create: {
+      schoolId: defaultSchoolId,
       name: "2026-27",
       startDate: new Date("2026-04-01"),
       endDate: new Date("2027-03-31"),
@@ -135,9 +152,9 @@ async function main() {
   const classes: Record<string, string> = {};
   for (const c of classData) {
     const cls = await prisma.class.upsert({
-      where: { name: c.name },
+      where: { schoolId_name: { schoolId: defaultSchoolId, name: c.name } },
       update: {},
-      create: c,
+      create: { ...c, schoolId: defaultSchoolId },
     });
     classes[c.name] = cls.id;
   }
@@ -189,9 +206,9 @@ async function main() {
   const teachers: string[] = [];
   for (const t of teacherData) {
     const teacher = await prisma.teacher.upsert({
-      where: { employeeId: t.employeeId },
+      where: { schoolId_employeeId: { schoolId: defaultSchoolId, employeeId: t.employeeId } },
       update: {},
-      create: { ...t, isDemo: true, joiningDate: new Date("2020-06-01") },
+      create: { ...t, schoolId: defaultSchoolId, isDemo: true, joiningDate: new Date("2020-06-01") },
     });
     teachers.push(teacher.id);
   }
@@ -344,8 +361,8 @@ async function main() {
         const admissionNumber = `ADM-2025-${String(counter).padStart(4, "0")}`;
         const studentId = `STU-2025-${String(counter).padStart(4, "0")}`;
 
-        const existing = await prisma.student.findUnique({
-          where: { admissionNumber },
+        const existing = await prisma.student.findFirst({
+          where: { schoolId: defaultSchoolId, admissionNumber },
         });
         if (existing) {
           studentIds.push(existing.id);
@@ -354,6 +371,7 @@ async function main() {
 
         const student = await prisma.student.create({
           data: {
+            schoolId: defaultSchoolId,
             studentId,
             admissionNumber,
             name: `${fname} ${lname}`,
@@ -406,9 +424,9 @@ async function main() {
   // Fee Payments
   const year = 2025;
   await prisma.receiptCounter.upsert({
-    where: { year },
+    where: { schoolId_year: { schoolId: defaultSchoolId, year } },
     update: { counter: 20 },
-    create: { year, counter: 20 },
+    create: { schoolId: defaultSchoolId, year, counter: 20 },
   });
 
   for (let i = 0; i < 10; i++) {

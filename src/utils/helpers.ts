@@ -60,6 +60,7 @@ export function numberToWords(num: number): string {
 }
 
 export const ROLE_LABELS: Record<string, string> = {
+  CREATOR: 'Creator (System Owner)',
   SUPER_ADMIN: 'Super Admin',
   PRINCIPAL: 'Principal',
   ACCOUNTANT: 'Accountant',
@@ -68,6 +69,7 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
+  CREATOR: ['*'],
   SUPER_ADMIN: ['*'],
   PRINCIPAL: ['dashboard', 'students', 'admissions', 'classes', 'teachers', 'subjects', 'attendance', 'exams', 'results', 'reports', 'notifications', 'settings.limited'],
   ACCOUNTANT: ['students.view', 'fees', 'payments', 'reports.fees', 'receipts'],
