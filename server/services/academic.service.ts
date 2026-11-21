@@ -500,7 +500,6 @@ export async function emptyTeacherRecycleBin(userId: string, schoolId?: string) 
     throw new Error(getErrorMessage(error));
   }
 }
-}
 
 export async function getSubjects(classId?: string, schoolId?: string) {
   const db = getPrismaClient();

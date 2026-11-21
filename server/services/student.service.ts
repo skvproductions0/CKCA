@@ -147,6 +147,23 @@ export async function createStudent(data: Record<string, unknown>, userId: strin
     if (schoolId) {
       raw.schoolId = schoolId;
     }
+
+    // Extract fee payment info before student creation
+    const initialPayment = raw.initialPayment as {
+      collectFee?: boolean;
+      feeCategoryId?: string;
+      totalAmount?: number;
+      paidAmount?: number;
+      paymentMethod?: string;
+      paymentDate?: string;
+      remarks?: string;
+    } | undefined;
+    delete raw.initialPayment;
+
+    // Extract documents before passing to Prisma (not a Student field)
+    const documents = Array.isArray(raw.documents) ? (raw.documents as Array<Record<string, unknown>>) : [];
+    delete raw.documents;
+
     let classId = (typeof raw.classId === 'string' && raw.classId.trim()) ? raw.classId.trim() : null;
     if (classId) {
       const exists = await db.class.findFirst({ where: { id: classId, ...(schoolId ? { schoolId } : {}) } });
@@ -354,7 +371,148 @@ export async function archiveStudent(id: string, userId: string, schoolId?: stri
   return student;
 }
 
-async function createStudentFeeRecord(studentId: string, academicYearId: string, classId?: string, schoolId?: string) {
+export async function getDeletedStudents(
+  filters: { search?: string; classId?: string; page?: number; limit?: number } = {},
+  schoolId?: string
+) {
+  const db = getPrismaClient();
+  const page = filters.page || 1;
+  const limit = filters.limit || 20;
+  const skip = (page - 1) * limit;
+
+  const where: Record<string, unknown> = {
+    OR: [
+      { deletedAt: { not: null } },
+      { status: 'ARCHIVED' },
+    ],
+    ...(schoolId ? { schoolId } : {}),
+  };
+
+  const andConditions: Record<string, unknown>[] = [];
+
+  if (filters.search) {
+    andConditions.push({
+      OR: [
+        { name: { contains: filters.search } },
+        { admissionNumber: { contains: filters.search } },
+        { studentId: { contains: filters.search } },
+        { fatherName: { contains: filters.search } },
+        { phone: { contains: filters.search } },
+      ],
+    });
+  }
+
+  if (filters.classId) {
+    andConditions.push({ classId: filters.classId });
+  }
+
+  const queryWhere = andConditions.length > 0 ? { ...where, AND: andConditions } : where;
+
+  const [students, total] = await Promise.all([
+    db.student.findMany({
+      where: queryWhere,
+      include: {
+        class: true,
+        section: true,
+        academicYear: true,
+      },
+      orderBy: { deletedAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    db.student.count({ where: queryWhere }),
+  ]);
+
+  return {
+    students,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+export async function restoreStudent(id: string, userId: string, schoolId?: string) {
+  const db = getPrismaClient();
+  const existing = await db.student.findUnique({ where: { id } });
+  if (!existing) throw new Error('Student not found');
+  if (schoolId && existing.schoolId && existing.schoolId !== schoolId) {
+    throw new Error('Student not found');
+  }
+
+  const student = await db.student.update({
+    where: { id },
+    data: {
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    include: { class: true, section: true },
+  });
+  await createAuditLog(userId, 'STUDENT_RESTORED', 'Student', id, `Restored student: ${student.name} from Recycle Bin`, schoolId);
+  return student;
+}
+
+export async function permanentDeleteStudent(id: string, userId: string, schoolId?: string) {
+  const db = getPrismaClient();
+  const student = await db.student.findUnique({ where: { id } });
+  if (!student) throw new Error('Student not found');
+  if (schoolId && student.schoolId && student.schoolId !== schoolId) {
+    throw new Error('Student not found');
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.admission.updateMany({ where: { studentId: id }, data: { studentId: null } });
+    await tx.document.deleteMany({ where: { studentId: id } });
+    await tx.result.deleteMany({ where: { studentId: id } });
+    await tx.attendance.deleteMany({ where: { studentId: id } });
+    await tx.feePayment.deleteMany({ where: { studentId: id } });
+    await tx.studentFee.deleteMany({ where: { studentId: id } });
+    await tx.student.delete({ where: { id } });
+  });
+
+  await createAuditLog(userId, 'STUDENT_DELETED_PERMANENTLY', 'Student', id, `Permanently deleted student: ${student.name}`, schoolId);
+  return { success: true, id };
+}
+
+export async function emptyRecycleBin(userId: string, schoolId?: string) {
+  const db = getPrismaClient();
+  const deletedStudents = await db.student.findMany({
+    where: {
+      OR: [
+        { deletedAt: { not: null } },
+        { status: 'ARCHIVED' },
+      ],
+      ...(schoolId ? { schoolId } : {}),
+    },
+    select: { id: true, name: true },
+  });
+
+  if (deletedStudents.length === 0) {
+    return { count: 0 };
+  }
+
+  const ids = deletedStudents.map((s) => s.id);
+
+  await db.$transaction(async (tx) => {
+    await tx.admission.updateMany({ where: { studentId: { in: ids } }, data: { studentId: null } });
+    await tx.document.deleteMany({ where: { studentId: { in: ids } } });
+    await tx.result.deleteMany({ where: { studentId: { in: ids } } });
+    await tx.attendance.deleteMany({ where: { studentId: { in: ids } } });
+    await tx.feePayment.deleteMany({ where: { studentId: { in: ids } } });
+    await tx.studentFee.deleteMany({ where: { studentId: { in: ids } } });
+    await tx.student.deleteMany({ where: { id: { in: ids } } });
+  });
+
+  await createAuditLog(userId, 'RECYCLE_BIN_EMPTIED', 'Student', 'ALL', `Emptied Recycle Bin (${deletedStudents.length} students permanently deleted)`, schoolId);
+  return { count: deletedStudents.length };
+}
+
+async function createStudentFeeRecord(
+  studentId: string,
+  academicYearId: string,
+  classId?: string,
+  schoolId?: string,
+  overrideTotalPaise?: number
+) {
   try {
     const db = getPrismaClient();
     const existingFee = await db.studentFee.findUnique({

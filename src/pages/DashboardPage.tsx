@@ -17,7 +17,7 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
 
 export default function DashboardPage() {
   const { academicYear, isFeatureEnabled, licenseWarning } = useApp();
-  const { error: showError } = useToast();
+  const { error: showError, success } = useToast();
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,7 +63,18 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle={`Overview for academic year ${academicYear?.name || ''}`}
+        subtitle={`Overview for academic year ${academicYear?.name || 'All'} • Last synced: ${lastSynced.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => loadDashboard(true)}
+            disabled={refreshing || loading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={cn('w-4 h-4 text-primary-600', (refreshing || loading) && 'animate-spin')} />
+            {refreshing ? 'Syncing...' : 'Sync Dashboard'}
+          </Button>
+        }
       />
 
       {licenseWarning && (

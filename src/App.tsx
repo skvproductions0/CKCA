@@ -86,6 +86,7 @@ export default function App() {
                   {/* Feature-guarded routes */}
                   <Route element={<ProtectedRoute featureId="students" />}>
                     <Route path="/students" element={<StudentsPage />} />
+                    <Route path="/students/deleted" element={<DeletedStudentsPage />} />
                     <Route path="/students/add" element={<StudentFormPage />} />
                     <Route path="/students/:id" element={<StudentProfilePage />} />
                     <Route path="/students/:id/edit" element={<StudentFormPage />} />
@@ -93,6 +94,7 @@ export default function App() {
 
                   <Route element={<ProtectedRoute featureId="admissions" />}>
                     <Route path="/admissions" element={<AdmissionsPage />} />
+                    <Route path="/admissions/new" element={<AdmissionFormPage />} />
                   </Route>
 
                   <Route element={<ProtectedRoute featureId="classes" />}>
@@ -101,6 +103,9 @@ export default function App() {
 
                   <Route element={<ProtectedRoute featureId="teachers" />}>
                     <Route path="/teachers" element={<TeachersPage />} />
+                    <Route path="/teachers/deleted" element={<DeletedTeachersPage />} />
+                    <Route path="/teachers/add" element={<TeacherFormPage />} />
+                    <Route path="/teachers/:id/edit" element={<TeacherFormPage />} />
                   </Route>
 
                   <Route element={<ProtectedRoute featureId="subjects" />}>
